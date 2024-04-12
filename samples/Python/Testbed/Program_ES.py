@@ -217,6 +217,7 @@ class TestApp(TestWrapper, TestClient):
     def __init__(self):
         TestWrapper.__init__(self)
         TestClient.__init__(self, wrapper=self)
+        self.ESDynamicStraddleStrategy = ESDynamicStraddleStrategy(self)
         # ! [socket_init]
         self.nKeybInt = 0
         self.started = False
@@ -245,7 +246,7 @@ class TestApp(TestWrapper, TestClient):
             self.nextTradingDay = (datetime.datetime.strptime(self.tradingDay, '%Y%m%d') + datetime.timedelta(days=1)).strftime('%Y%m%d')
 
         self.spxwPrices = [] #value is array of spxwPrice
-        self.ESDynamicStraddleStrategy = ESDynamicStraddleStrategy(self)
+        
         self.message_from_ib_queue = queue.Queue()
 
 
@@ -297,10 +298,15 @@ class TestApp(TestWrapper, TestClient):
 
         if self.globalCancelOnly:
             print("Executing GlobalCancel only")
+            #write ESDynamicStraddleStrategy log file
+            self.ESDynamicStraddleStrategy.log_file_handle.write("Executing GlobalCancel only\n")
             self.reqGlobalCancel()
         #else:
         if True:
             print("Executing requests")
+            #write ESDynamicStraddleStrategy log file
+            self.ESDynamicStraddleStrategy.log_file_handle.write("Executing requests\n")
+
             #self.reqGlobalCancel()
             #self.marketDataTypeOperations()
             #self.accountOperations_req()
@@ -379,8 +385,12 @@ class TestApp(TestWrapper, TestClient):
         super().error(reqId, errorCode, errorString, advancedOrderRejectJson)
         if advancedOrderRejectJson:
             print("Error. Id:", reqId, "Code:", errorCode, "Msg:", errorString, "AdvancedOrderRejectJson:", advancedOrderRejectJson)
+            #write ESDynamicStraddleStrategy log file
+            self.ESDynamicStraddleStrategy.log_file_handle.write("Error. Id: %s Code: %s Msg: %s AdvancedOrderRejectJson: %s\n" % (reqId, errorCode, errorString, advancedOrderRejectJson))
         else:
             print("Error. Id:", reqId, "Code:", errorCode, "Msg:", errorString)
+            #write ESDynamicStraddleStrategy log file
+            self.ESDynamicStraddleStrategy.log_file_handle.write("Error. Id: %s Code: %s Msg: %s\n" % (reqId, errorCode, errorString))
 
     # ! [error] self.reqId2nErr[reqId] += 1
 
@@ -395,16 +405,20 @@ class TestApp(TestWrapper, TestClient):
                   orderState: OrderState):
         super().openOrder(orderId, contract, order, orderState)
         print("OpenOrder. PermId:", intMaxString(order.permId), "ClientId:", intMaxString(order.clientId), " OrderId:", intMaxString(orderId), 
-              "Account:", order.account, "Symbol:", contract.symbol, "SecType:", contract.secType,
-              "Exchange:", contract.exchange, "Action:", order.action, "OrderType:", order.orderType,
-              "TotalQty:", decimalMaxString(order.totalQuantity), "CashQty:", floatMaxString(order.cashQty), 
-              "LmtPrice:", floatMaxString(order.lmtPrice), "AuxPrice:", floatMaxString(order.auxPrice), "Status:", orderState.status,
-              "MinTradeQty:", intMaxString(order.minTradeQty), "MinCompeteSize:", intMaxString(order.minCompeteSize),
-              "competeAgainstBestOffset:", "UpToMid" if order.competeAgainstBestOffset == COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID else floatMaxString(order.competeAgainstBestOffset),
-              "MidOffsetAtWhole:", floatMaxString(order.midOffsetAtWhole),"MidOffsetAtHalf:" ,floatMaxString(order.midOffsetAtHalf))
-
-        order.contract = contract
+            "Account:", order.account, "Symbol:", contract.symbol, "SecType:", contract.secType,
+            "Exchange:", contract.exchange, "Action:", order.action, "OrderType:", order.orderType,
+            "TotalQty:", decimalMaxString(order.totalQuantity), "CashQty:", floatMaxString(order.cashQty), 
+            "LmtPrice:", floatMaxString(order.lmtPrice), "AuxPrice:", floatMaxString(order.auxPrice), "Status:", orderState.status,
+            "MinTradeQty:", intMaxString(order.minTradeQty), "MinCompeteSize:", intMaxString(order.minCompeteSize),
+            "competeAgainstBestOffset:", "UpToMid" if order.competeAgainstBestOffset == COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID else floatMaxString(order.competeAgainstBestOffset),
+            "MidOffsetAtWhole:", floatMaxString(order.midOffsetAtWhole),"MidOffsetAtHalf:" ,floatMaxString(order.midOffsetAtHalf))
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("OpenOrder. PermId: %s ClientId: %s OrderId: %s Account: %s Symbol: %s SecType: %s Exchange: %s Action: %s OrderType: %s TotalQty: %s CashQty: %s LmtPrice: %s AuxPrice: %s Status: %s MinTradeQty: %s MinCompeteSize: %s competeAgainstBestOffset: %s MidOffsetAtWhole: %s MidOffsetAtHalf: %s\n" % (intMaxString(order.permId), intMaxString(order.clientId), intMaxString(orderId), order.account, contract.symbol, contract.secType, contract.exchange, order.action, order.orderType, decimalMaxString(order.totalQuantity), floatMaxString(order.cashQty), floatMaxString(order.lmtPrice), floatMaxString(order.auxPrice), orderState.status, intMaxString(order.minTradeQty), intMaxString(order.minCompeteSize), "UpToMid" if order.competeAgainstBestOffset == COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID else floatMaxString(order.competeAgainstBestOffset), floatMaxString(order.midOffsetAtWhole), floatMaxString(order.midOffsetAtHalf)))
+        self.message_from_ib_queue.put(("open_order", orderId, contract, order, orderState))
+        
+        #order.contract = contract
         self.permId2ord[order.permId] = order
+
     # ! [openorder]
 
     @iswrapper
@@ -412,7 +426,9 @@ class TestApp(TestWrapper, TestClient):
     def openOrderEnd(self):
         super().openOrderEnd()
         print("OpenOrderEnd")
-
+        self.ESDynamicStraddleStrategy.log_file_handle.write("OpenOrderEnd\n")
+        self.ESDynamicStraddleStrategy.call_stplmt_open_orders_tuples.clear()
+        self.ESDynamicStraddleStrategy.put_stplmt_open_orders_tuples.clear()
         logging.debug("Received %d openOrders", len(self.permId2ord))
     # ! [openorderend]
 
@@ -429,6 +445,8 @@ class TestApp(TestWrapper, TestClient):
               "PermId:", intMaxString(permId), "ParentId:", intMaxString(parentId), "LastFillPrice:",
               floatMaxString(lastFillPrice), "ClientId:", intMaxString(clientId), "WhyHeld:",
               whyHeld, "MktCapPrice:", floatMaxString(mktCapPrice))
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("OrderStatus. Id: %s Status: %s Filled: %s Remaining: %s AvgFillPrice: %s PermId: %s ParentId: %s LastFillPrice: %s ClientId: %s WhyHeld: %s MktCapPrice: %s\n" % (orderId, status, decimalMaxString(filled), decimalMaxString(remaining), floatMaxString(avgFillPrice), intMaxString(permId), intMaxString(parentId), floatMaxString(lastFillPrice), intMaxString(clientId), whyHeld, floatMaxString(mktCapPrice)))
     # ! [orderstatus]
 
 
@@ -574,6 +592,8 @@ class TestApp(TestWrapper, TestClient):
         super().accountSummary(reqId, account, tag, value, currency)
         print("AccountSummary. ReqId:", reqId, "Account:", account,
               "Tag: ", tag, "Value:", value, "Currency:", currency)
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("AccountSummary. ReqId: %s Account: %s Tag: %s Value: %s Currency: %s\n" % (reqId, account, tag, value, currency))
     # ! [accountsummary]
 
     @iswrapper
@@ -581,6 +601,8 @@ class TestApp(TestWrapper, TestClient):
     def accountSummaryEnd(self, reqId: int):
         super().accountSummaryEnd(reqId)
         print("AccountSummaryEnd. ReqId:", reqId)
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("AccountSummaryEnd. ReqId: %s\n" % reqId)
     # ! [accountsummaryend]
 
     @iswrapper
@@ -590,6 +612,8 @@ class TestApp(TestWrapper, TestClient):
         super().updateAccountValue(key, val, currency, accountName)
         print("UpdateAccountValue. Key:", key, "Value:", val,
               "Currency:", currency, "AccountName:", accountName)
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("UpdateAccountValue. Key: %s Value: %s Currency: %s AccountName: %s\n" % (key, val, currency, accountName))
     # ! [updateaccountvalue]
 
     @iswrapper
@@ -605,6 +629,8 @@ class TestApp(TestWrapper, TestClient):
               "MarketValue:", floatMaxString(marketValue), "AverageCost:", floatMaxString(averageCost),
               "UnrealizedPNL:", floatMaxString(unrealizedPNL), "RealizedPNL:", floatMaxString(realizedPNL),
               "AccountName:", accountName)
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("UpdatePortfolio. Symbol: %s SecType: %s Exchange: %s Position: %s MarketPrice: %s MarketValue: %s AverageCost: %s UnrealizedPNL: %s RealizedPNL: %s AccountName: %s\n" % (contract.symbol, contract.secType, contract.exchange, decimalMaxString(position), floatMaxString(marketPrice), floatMaxString(marketValue), floatMaxString(averageCost), floatMaxString(unrealizedPNL), floatMaxString(realizedPNL), accountName))
     # ! [updateportfolio]
 
     @iswrapper
@@ -612,6 +638,8 @@ class TestApp(TestWrapper, TestClient):
     def updateAccountTime(self, timeStamp: str):
         super().updateAccountTime(timeStamp)
         print("UpdateAccountTime. Time:", timeStamp)
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("UpdateAccountTime. Time: %s\n" % timeStamp)
     # ! [updateaccounttime]
 
     @iswrapper
@@ -619,6 +647,8 @@ class TestApp(TestWrapper, TestClient):
     def accountDownloadEnd(self, accountName: str):
         super().accountDownloadEnd(accountName)
         print("AccountDownloadEnd. Account:", accountName)
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("AccountDownloadEnd. Account: %s\n" % accountName)
     # ! [accountdownloadend]
 
     @iswrapper
@@ -629,6 +659,8 @@ class TestApp(TestWrapper, TestClient):
         print("Position.", "Account:", account, "Symbol:", contract.symbol, "SecType:",
               contract.secType, "Currency:", contract.currency,
               "Position:", decimalMaxString(position), "Avg cost:", floatMaxString(avgCost))
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("Position. Account: %s Symbol: %s SecType: %s Currency: %s Position: %s Avg cost: %s\n" % (account, contract.symbol, contract.secType, contract.currency, decimalMaxString(position), floatMaxString(avgCost)))
         self.message_from_ib_queue.put(("position", account, contract, position, avgCost))
          # ! [position]
 
@@ -637,6 +669,8 @@ class TestApp(TestWrapper, TestClient):
     def positionEnd(self):
         super().positionEnd()
         print("PositionEnd")
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("PositionEnd\n")
     # ! [positionend]
 
     @iswrapper
@@ -697,6 +731,8 @@ class TestApp(TestWrapper, TestClient):
         print("AccountUpdateMulti. RequestId:", reqId, "Account:", account,
               "ModelCode:", modelCode, "Key:", key, "Value:", value,
               "Currency:", currency)
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("AccountUpdateMulti. RequestId: %s Account: %s ModelCode: %s Key: %s Value: %s Currency: %s\n" % (reqId, account, modelCode, key, value, currency))
     # ! [accountupdatemulti]
 
     @iswrapper
@@ -704,6 +740,8 @@ class TestApp(TestWrapper, TestClient):
     def accountUpdateMultiEnd(self, reqId: int):
         super().accountUpdateMultiEnd(reqId)
         print("AccountUpdateMultiEnd. RequestId:", reqId)
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("AccountUpdateMultiEnd. RequestId: %s\n" % reqId)
     # ! [accountupdatemultiend]
 
     @iswrapper
@@ -722,6 +760,8 @@ class TestApp(TestWrapper, TestClient):
         super().pnl(reqId, dailyPnL, unrealizedPnL, realizedPnL)
         print("Daily PnL. ReqId:", reqId, "DailyPnL:", floatMaxString(dailyPnL),
               "UnrealizedPnL:", floatMaxString(unrealizedPnL), "RealizedPnL:", floatMaxString(realizedPnL))
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("Daily PnL. ReqId: %s DailyPnL: %s UnrealizedPnL: %s RealizedPnL: %s\n" % (reqId, floatMaxString(dailyPnL), floatMaxString(unrealizedPnL), floatMaxString(realizedPnL)))
     # ! [pnl]
 
     @iswrapper
@@ -732,6 +772,8 @@ class TestApp(TestWrapper, TestClient):
         print("Daily PnL Single. ReqId:", reqId, "Position:", decimalMaxString(pos),
               "DailyPnL:", floatMaxString(dailyPnL), "UnrealizedPnL:", floatMaxString(unrealizedPnL),
               "RealizedPnL:", floatMaxString(realizedPnL), "Value:", floatMaxString(value))
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("Daily PnL Single. ReqId: %s Position: %s DailyPnL: %s UnrealizedPnL: %s RealizedPnL: %s Value: %s\n" % (reqId, decimalMaxString(pos), floatMaxString(dailyPnL), floatMaxString(unrealizedPnL), floatMaxString(realizedPnL), floatMaxString(value)))
     # ! [pnlsingle]
 
     def marketDataTypeOperations(self):
@@ -745,6 +787,8 @@ class TestApp(TestWrapper, TestClient):
     def marketDataType(self, reqId: TickerId, marketDataType: int):
         super().marketDataType(reqId, marketDataType)
         print("MarketDataType. ReqId:", reqId, "Type:", marketDataType)
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("MarketDataType. ReqId: %s Type: %s\n" % (reqId, marketDataType))
     # ! [marketdatatype]
 
     @printWhenExecuting
@@ -877,7 +921,6 @@ class TestApp(TestWrapper, TestClient):
         if reqContract.secType == "FUT" and reqContract.symbol == "ES":
             #post price update to ESDynamicStraddleStrategy
             if tickType == TickTypeEnum.BID or tickType == TickTypeEnum.ASK or tickType == TickTypeEnum.LAST:
-                print("calling updateESPrice:", price, "floor:", floor(price))
                 self.ESDynamicStraddleStrategy.updateESPrice(price,self)
                 #self.ESDynamicStraddleStrategy.lastESPrice = self.ESDynamicStraddleStrategy.currentESPrice
                 #self.ESDynamicStraddleStrategy.currentESPrice = price
@@ -2378,7 +2421,7 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240411"
+        self.OptionTradeDate = "20240412"
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
@@ -2397,6 +2440,9 @@ class ESDynamicStraddleStrategy(Object):
         self.limit_price_slack_ticks = 6
         self.hedge_outer_offset = 200
         self.intra_order_sleep_time_ms = 100
+        self.attach_bracket_order = True
+        self.call_stplmt_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
+        self.put_stplmt_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
         assert reqContract.symbol == "ES" and reqContract.secType == "FOP" and reqContract.lastTradeDateOrContractMonth == self.OptionTradeDate
@@ -2428,7 +2474,7 @@ class ESDynamicStraddleStrategy(Object):
     def process_messages_from_ib_queue(self, testapp : TestApp):
         while not testapp.message_from_ib_queue.empty():
             msg = testapp.message_from_ib_queue.get()
-            #msg is a tuple with the first element being the message type and the remaining elements being the message
+            #msg is a tuple with the first e`lement being the message type and the remaining elements being the message
             msg_type = msg[0]
             if msg_type == "position":
                 account = msg[1]
@@ -2459,15 +2505,45 @@ class ESDynamicStraddleStrategy(Object):
                                 del self.long_put_option_positions[contract.strike]
                             if contract.strike in self.short_put_option_positions:
                                 del self.short_put_option_positions[contract.strike]
-        #print updated positions
-        print("long_call_option_positions:", self.long_call_option_positions)
-        self.log_file_handle.write("long_call_option_positions:" + str(self.long_call_option_positions) + "\n")
-        print("short_call_option_positions:", self.short_call_option_positions)
-        self.log_file_handle.write("short_call_option_positions:" + str(self.short_call_option_positions) + "\n")
-        print("long_put_option_positions:", self.long_put_option_positions)
-        self.log_file_handle.write("long_put_option_positions:" + str(self.long_put_option_positions) + "\n")
-        print("short_put_option_positions:", self.short_put_option_positions)
-        self.log_file_handle.write("short_put_option_positions:" + str(self.short_put_option_positions) + "\n")
+                #print updated positions
+                print("long_call_option_positions:", self.long_call_option_positions)
+                self.log_file_handle.write("long_call_option_positions:" + str(self.long_call_option_positions) + "\n")
+                print("short_call_option_positions:", self.short_call_option_positions)
+                self.log_file_handle.write("short_call_option_positions:" + str(self.short_call_option_positions) + "\n")
+                print("long_put_option_positions:", self.long_put_option_positions)
+                self.log_file_handle.write("long_put_option_positions:" + str(self.long_put_option_positions) + "\n")
+                print("short_put_option_positions:", self.short_put_option_positions)
+                self.log_file_handle.write("short_put_option_positions:" + str(self.short_put_option_positions) + "\n")
+            elif msg_type == "open_order":
+                order_id = msg[1]
+                contract = msg[2]
+                order = msg[3]
+                order_state = msg[4]
+                print("open_order message received. order_id:", order_id, "contract:", contract, "order:", order, "order_state:", order_state)
+                self.log_file_handle.write("open_order message received. order_id:" + str(order_id) + " contract:" + str(contract) + " order:" + str(order) + " order_state:" + str(order_state) + "\n")
+                if contract.symbol == "ES" and contract.secType == "FOP" and contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
+                    if order.action == "BUY" and order.orderType == "STP LMT" and order.lmtPrice is not None and order.lmtPrice > 0 and order.auxPrice is not None and order.auxPrice > 0 and OrderState.status == "PreSubmitted":
+                        if contract.right == "C":
+                            self.call_stplmt_open_orders_tuples[contract.strike].append((order_id, contract, order, order_state))
+                        elif contract.right == "P":
+                            self.put_stplmt_open_orders_tuples[contract.strike].append((order_id, contract, order, order_state))
+
+        #request currently open orders
+        testapp.reqAllOpenOrders()
+
+    def cancelpendingstplmtorder(self, testapp : TestApp, strike, right):
+        if right == "C":
+            for strike, stplmt_open_orders_tuples in self.call_stplmt_open_orders_tuples.items():
+                for order_id, contract, order, order_state in stplmt_open_orders_tuples:
+                    testapp.cancelOrder(order_id)
+                    #remove the order from the list
+                    self.call_stplmt_open_orders_tuples[strike].remove((order_id, contract, order, order_state))
+        else:
+            for strike, stplmt_open_orders_tuples in self.put_stplmt_open_orders_tuples.items():
+                for order_id, contract, order, order_state in stplmt_open_orders_tuples:
+                    testapp.cancelOrder(order_id)
+                    #remove the order from the list
+                    self.put_stplmt_open_orders_tuples[strike].remove((order_id, contract, order, order_state))
 
     def updateESPrice(self, newESPrice, testapp : TestApp):
         
@@ -2521,16 +2597,18 @@ class ESDynamicStraddleStrategy(Object):
         if self.lastESPrice is None and self.currentESPrice is None:
             #wait until price floor modulo 5 is 0
             if floor(newESPrice) % 5 != 0:
+                current_time = datetime.datetime.now()
+                self.log_file_handle.write(f"waiting for floor(newESPrice) % 5 == 0: time {str(current_time)} price {newESPrice}\n")
                 return
             print("setting lastESPrice and currentESPrice to floor(newESPrice):", floor(newESPrice))
             self.log_file_handle.write("setting lastESPrice and currentESPrice to floor(newESPrice):" + str(floor(newESPrice)) + "\n")
             self.currentESPrice = floor(newESPrice)
-            self.lastESPrice = floor(newESPrice)
+            self.lastESPrice = floor(newESPrice) - 5 #FIXME: this is a temporary hack
         if self.lastESPrice is not None and self.currentESPrice is not None: 
             self.currentESPrice = newESPrice
         if self.lastESPrice is not None and self.currentESPrice is not None:
             assert self.lastESPrice % 5 == 0
-            if self.currentESPrice > self.lastESPrice + 5:
+            if self.currentESPrice >= self.lastESPrice + 5:
                 self.priceDirection = 1
                 print("ES bid:", self.currentESPrice, "direction: up")
                 self.log_file_handle.write("ES bid:" + str(self.currentESPrice) + "direction: up\n")
@@ -2562,29 +2640,35 @@ class ESDynamicStraddleStrategy(Object):
                                 bid_price = self.ES_FOP_quote_bid_call[strike]
                                 ask_price = self.ES_FOP_quote_ask_call[strike]
                                 spread = ask_price - bid_price
-                                assert spread >= 0
-                                if bid_price is not None and ask_price is not None and ask_price >= 10:
-                                    tick_size = 0.25
-                                spread_size = int((ask_price - bid_price)/tick_size)
-                                for limit_price_tick_num in range(spread_size+1+2*self.limit_price_slack_ticks):
-                                    limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
-                                    short_call_option_to_close = OrderSamples.LimitOrder("BUY", -position, limit_price)
-                                    short_call_option_to_close.orderType = "LMT"
-                                    short_call_option_to_close.action = "BUY"
-                                    short_call_option_to_close.totalQuantity = -position
-                                    short_call_option_to_close.lmtPrice = limit_price
-                                    short_call_option_to_close.transmit = self.transmit_orders
-                                    short_call_option_OCA_order_to_close_tuple = (limit_price, short_call_option_to_close)
-                                    short_call_option_OCA_order_to_close_tuples.append(short_call_option_OCA_order_to_close_tuple)
-                                short_call_option_OCA_orders_to_close = [o for _price, o in short_call_option_OCA_order_to_close_tuples]
-                                OrderSamples.OneCancelsAll("UpCloseShortCallOCO_"+str(testapp.nextValidOrderId), short_call_option_OCA_orders_to_close, 2)
-                                for _price, o in short_call_option_OCA_order_to_close_tuples:
-                                    o.account = self.place_orders_to_account
-                                    testapp.placeOrder(testapp.nextValidOrderId, short_call_option_contract_to_close, o)
-                                    short_call_option_OCAOrderIds.append(testapp.nextValidOrderId)
-                                    testapp.nextValidOrderId += 1
-                                    self.log_file_handle.write("closing short call position for strike:" + str(strike) + "short_call_option_contract_to_close:" + str(short_call_option_contract_to_close) + "limit_price:" + str(_price) + "\n")
-                                    time.sleep(self.intra_order_sleep_time_ms/1000)
+                                if spread >= 0:
+                                    if bid_price is not None and ask_price is not None and ask_price >= 10:
+                                        tick_size = 0.25
+                                    spread_size = int((ask_price - bid_price)/tick_size)
+                                    for limit_price_tick_num in range(spread_size+1+2*self.limit_price_slack_ticks):
+                                        limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
+                                        short_call_option_to_close = OrderSamples.LimitOrder("BUY", -position, limit_price)
+                                        short_call_option_to_close.orderType = "LMT"
+                                        short_call_option_to_close.action = "BUY"
+                                        short_call_option_to_close.totalQuantity = -position
+                                        short_call_option_to_close.lmtPrice = limit_price
+                                        short_call_option_to_close.transmit = self.transmit_orders
+                                        short_call_option_to_close.outsideRth = True
+                                        short_call_option_OCA_order_to_close_tuple = (limit_price, short_call_option_to_close)
+                                        short_call_option_OCA_order_to_close_tuples.append(short_call_option_OCA_order_to_close_tuple)
+                                    short_call_option_OCA_orders_to_close = [o for _price, o in short_call_option_OCA_order_to_close_tuples]
+                                    OrderSamples.OneCancelsAll("UpCloseShortCallOCO_"+str(testapp.nextValidOrderId), short_call_option_OCA_orders_to_close, 2)
+                                    for _price, o in short_call_option_OCA_order_to_close_tuples:
+                                        o.account = self.place_orders_to_account
+                                        testapp.placeOrder(testapp.nextValidOrderId, short_call_option_contract_to_close, o)
+                                        short_call_option_OCAOrderIds.append(testapp.nextValidOrderId)
+                                        testapp.nextValidOrderId += 1
+                                        self.log_file_handle.write("closing short call position for strike:" + str(strike) + "short_call_option_contract_to_close:" + str(short_call_option_contract_to_close) + "limit_price:" + str(_price) + "\n")
+                                        #caccel pending stop limit orders
+                                        self.cancelpendingstplmtorder(testapp, strike, "C")
+                                        time.sleep(self.intra_order_sleep_time_ms/1000)
+                                else:
+                                    print("skip closing short call position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
+                                    self.log_file_handle.write("skip closing short call position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
 
                 #close all short put positions with strike price greater than lastESPrice_
                 for strike, position in self.short_put_option_positions.items():
@@ -2612,29 +2696,35 @@ class ESDynamicStraddleStrategy(Object):
                                 bid_price = self.ES_FOP_quote_bid_put[strike]
                                 ask_price = self.ES_FOP_quote_ask_put[strike]
                                 spread = ask_price - bid_price
-                                assert spread >= 0
-                                if bid_price is not None and ask_price is not None and ask_price >= 10:
-                                    tick_size = 0.25
-                                spread_size = int((ask_price - bid_price)/tick_size)
-                                for limit_price_tick_num in range(spread_size+1+2*self.limit_price_slack_ticks):
-                                    limit_price = bid_price -self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
-                                    short_put_option_to_close = OrderSamples.LimitOrder("BUY", -position, limit_price)
-                                    short_put_option_to_close.orderType = "LMT"
-                                    short_put_option_to_close.action = "BUY"
-                                    short_put_option_to_close.totalQuantity = -position
-                                    short_put_option_to_close.lmtPrice = limit_price
-                                    short_put_option_to_close.transmit = self.transmit_orders
-                                    short_put_option_OCA_order_to_close_tuple = (limit_price, short_put_option_to_close)
-                                    short_put_option_OCA_order_to_close_tuples.append(short_put_option_OCA_order_to_close_tuple)
-                                short_put_option_OCA_orders_to_close = [o for _price, o in short_put_option_OCA_order_to_close_tuples]
-                                OrderSamples.OneCancelsAll("UpCloseShortPutOCO_"+str(testapp.nextValidOrderId), short_put_option_OCA_orders_to_close, 2)
-                                for _price, o in short_put_option_OCA_order_to_close_tuples:
-                                    o.account = self.place_orders_to_account
-                                    testapp.placeOrder(testapp.nextValidOrderId, short_put_option_contract_to_close, o)
-                                    short_put_option_OCAOrderIds.append(testapp.nextValidOrderId)
-                                    testapp.nextValidOrderId += 1
-                                    self.log_file_handle.write("closing short put position for strike:" + str(strike) + "short_put_option_contract_to_close:" + str(short_put_option_contract_to_close) + "limit_price:" + str(_price) + "\n")
-                                    time.sleep(self.intra_order_sleep_time_ms/1000)
+                                if spread >= 0:
+                                    if bid_price is not None and ask_price is not None and ask_price >= 10:
+                                        tick_size = 0.25
+                                    spread_size = int((ask_price - bid_price)/tick_size)
+                                    for limit_price_tick_num in range(spread_size+1+2*self.limit_price_slack_ticks):
+                                        limit_price = bid_price -self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
+                                        short_put_option_to_close = OrderSamples.LimitOrder("BUY", -position, limit_price)
+                                        short_put_option_to_close.orderType = "LMT"
+                                        short_put_option_to_close.action = "BUY"
+                                        short_put_option_to_close.totalQuantity = -position
+                                        short_put_option_to_close.lmtPrice = limit_price
+                                        short_put_option_to_close.transmit = self.transmit_orders
+                                        short_put_option_to_close.outsideRth = True
+                                        short_put_option_OCA_order_to_close_tuple = (limit_price, short_put_option_to_close)
+                                        short_put_option_OCA_order_to_close_tuples.append(short_put_option_OCA_order_to_close_tuple)
+                                    short_put_option_OCA_orders_to_close = [o for _price, o in short_put_option_OCA_order_to_close_tuples]
+                                    OrderSamples.OneCancelsAll("UpCloseShortPutOCO_"+str(testapp.nextValidOrderId), short_put_option_OCA_orders_to_close, 2)
+                                    for _price, o in short_put_option_OCA_order_to_close_tuples:
+                                        o.account = self.place_orders_to_account
+                                        testapp.placeOrder(testapp.nextValidOrderId, short_put_option_contract_to_close, o)
+                                        short_put_option_OCAOrderIds.append(testapp.nextValidOrderId)
+                                        testapp.nextValidOrderId += 1
+                                        self.log_file_handle.write("closing short put position for strike:" + str(strike) + "short_put_option_contract_to_close:" + str(short_put_option_contract_to_close) + "limit_price:" + str(_price) + "\n")
+                                        #caccel pending stop limit orders
+                                        self.cancelpendingstplmtorder(testapp, strike, "P")
+                                        time.sleep(self.intra_order_sleep_time_ms/1000)
+                                else:
+                                    print("skip closing short put position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
+                                    self.log_file_handle.write("skip closing short put position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
                                 
                 up_call_buy_order_needed  = True
                 total_long_call_positions = 0
@@ -2676,6 +2766,7 @@ class ESDynamicStraddleStrategy(Object):
                         print("placing call buy order for strike:", _strike, "up_call_buy_option_contract:", up_call_buy_option_contract)
                         self.log_file_handle.write("placing call buy order for strike:" + str(_strike) + "up_call_buy_option_contract:" + str(up_call_buy_option_contract) + "\n")
                         o.account = self.place_orders_to_account
+                        o.outsideRth = True
                         testapp.placeOrder(testapp.nextValidOrderId, up_call_buy_option_contract, o)
                         up_call_buy_OCAOrderId = testapp.nextValidOrderId
                         testapp.nextValidOrderId += 1
@@ -2721,6 +2812,7 @@ class ESDynamicStraddleStrategy(Object):
                         print("placing put buy order for strike:", _strike, "up_put_buy_option_contract:", up_put_buy_option_contract)
                         self.log_file_handle.write("placing put buy order for strike:" + str(_strike) + "up_put_buy_option_contract:" + str(up_put_buy_option_contract) + "\n")
                         o.account = self.place_orders_to_account
+                        o.outsideRth = True
                         testapp.placeOrder(testapp.nextValidOrderId, up_put_buy_option_contract, o)
                         up_put_buy_OCAOrderId = testapp.nextValidOrderId
                         testapp.nextValidOrderId += 1
@@ -2740,37 +2832,7 @@ class ESDynamicStraddleStrategy(Object):
                     print("placing call order for strike:", straddle_strike, "short_call_option_contract_to_open:", short_call_option_contract_to_open)
                     self.log_file_handle.write("placing call order for strike:" + str(straddle_strike) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "\n")
 
-                    short_call_option_OCA_order_to_open_tuples = []
-                    short_call_option_OCAOrderIds = []
-                    tick_size = 0.05
-                    #decide tick size based on quote price
-                    if straddle_strike in self.ES_FOP_quote_bid_call:
-                        bid_price = self.ES_FOP_quote_bid_call[straddle_strike]
-                        ask_price = self.ES_FOP_quote_ask_call[straddle_strike]
-                        spread = ask_price - bid_price
-                        assert spread >= 0
-                        if bid_price is not None and ask_price is not None and ask_price >= 10:
-                            tick_size = 0.25
-                        spread_size = int((ask_price - bid_price)/tick_size)
-                        for limit_price_tick_num in reversed(range(spread_size+1+2*self.limit_price_slack_ticks)):
-                            limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
-                            short_call_option_to_open = OrderSamples.LimitOrder("SELL", 1, limit_price)
-                            short_call_option_to_open.orderType = "LMT"
-                            short_call_option_to_open.action = "SELL"
-                            short_call_option_to_open.totalQuantity = 1
-                            short_call_option_to_open.lmtPrice = limit_price
-                            short_call_option_to_open.transmit = self.transmit_orders
-                            short_call_option_OCA_order_to_open_tuple = (limit_price, short_call_option_to_open)
-                            short_call_option_OCA_order_to_open_tuples.append(short_call_option_OCA_order_to_open_tuple)
-                        short_call_option_OCA_orders_to_open = [o for _price, o in short_call_option_OCA_order_to_open_tuples]
-                        OrderSamples.OneCancelsAll("UpShortCallOCO_"+str(testapp.nextValidOrderId), short_call_option_OCA_orders_to_open, 2)
-                        for _price, o in short_call_option_OCA_order_to_open_tuples:
-                            o.account = self.place_orders_to_account
-                            testapp.placeOrder(testapp.nextValidOrderId, short_call_option_contract_to_open, o)
-                            short_call_option_OCAOrderIds.append(testapp.nextValidOrderId)
-                            testapp.nextValidOrderId += 1
-                            self.log_file_handle.write("placing call order for strike:" + str(straddle_strike) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "limit_price:" + str(_price) + "\n")
-                            time.sleep(self.intra_order_sleep_time_ms/1000)
+                    self.place_short_call_option_to_open_orders(testapp, straddle_strike, short_call_option_contract_to_open)
 
                 if self.short_put_option_positions.get(lastESPrice_, 0) == 0:
                     straddle_strike = lastESPrice_
@@ -2786,42 +2848,12 @@ class ESDynamicStraddleStrategy(Object):
                     print("placing put order for strike:", straddle_strike, "short_put_option_contract_to_open:", short_put_option_contract_to_open)
                     self.log_file_handle.write("placing put order for strike:" + str(straddle_strike) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "\n")
 
-                    short_put_option_OCA_order_to_open_tuples = []
-                    short_put_option_OCAOrderIds = []
-                    tick_size = 0.05
-                    #decide tick size based on quote price
-                    if straddle_strike in self.ES_FOP_quote_bid_put:
-                        bid_price = self.ES_FOP_quote_bid_put[straddle_strike]
-                        ask_price = self.ES_FOP_quote_ask_put[straddle_strike]
-                        spread = ask_price - bid_price
-                        assert spread >= 0
-                        if bid_price is not None and ask_price is not None and ask_price >= 10:
-                            tick_size = 0.25
-                        spread_size = int((ask_price - bid_price)/tick_size)
-                        for limit_price_tick_num in reversed(range(spread_size+1+2*self.limit_price_slack_ticks)):
-                            limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
-                            short_put_option_to_open = OrderSamples.LimitOrder("SELL", 1, limit_price)
-                            short_put_option_to_open.orderType = "LMT"
-                            short_put_option_to_open.action = "SELL"
-                            short_put_option_to_open.totalQuantity = 1
-                            short_put_option_to_open.lmtPrice = limit_price
-                            short_put_option_to_open.transmit = self.transmit_orders
-                            short_put_option_OCA_order_to_open_tuple = (limit_price, short_put_option_to_open)
-                            short_put_option_OCA_order_to_open_tuples.append(short_put_option_OCA_order_to_open_tuple)
-                        short_put_option_OCA_orders_to_open = [o for _price, o in short_put_option_OCA_order_to_open_tuples]
-                        OrderSamples.OneCancelsAll("UpShortPutOCO_"+str(testapp.nextValidOrderId), short_put_option_OCA_orders_to_open, 2)
-                        for _price, o in short_put_option_OCA_order_to_open_tuples:
-                            o.account = self.place_orders_to_account
-                            testapp.placeOrder(testapp.nextValidOrderId, short_put_option_contract_to_open, o)
-                            short_put_option_OCAOrderIds.append(testapp.nextValidOrderId)
-                            testapp.nextValidOrderId += 1
-                            self.log_file_handle.write("placing put order for strike:" + str(straddle_strike) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "limit_price:" + str(_price) + "\n")
-                            time.sleep(self.intra_order_sleep_time_ms/1000)
+                    self.place_short_put_option_to_open_orders(testapp, straddle_strike, short_put_option_contract_to_open)
                 
                 self.lastESPrice = lastESPrice_
                 print("set new lastESPrice to:", self.lastESPrice)
                 self.log_file_handle.write("set new lastESPrice to:" + str(self.lastESPrice) + "\n")
-            elif self.currentESPrice < self.lastESPrice - 5:
+            elif self.currentESPrice <= self.lastESPrice - 5:
                 assert self.lastESPrice % 5 == 0
                 print("ES bid:", self.currentESPrice, "direction: down")
                 self.log_file_handle.write("ES bid:" + str(self.currentESPrice) + "direction: down\n")
@@ -2854,29 +2886,35 @@ class ESDynamicStraddleStrategy(Object):
                                 bid_price = self.ES_FOP_quote_bid_call[strike]
                                 ask_price = self.ES_FOP_quote_ask_call[strike]
                                 spread = ask_price - bid_price
-                                assert spread >= 0
-                                if bid_price is not None and ask_price is not None and ask_price >= 10:
-                                    tick_size = 0.25
-                                spread_size = int((ask_price - bid_price)/tick_size)
-                                for limit_price_tick_num in range(spread_size+1+2*self.limit_price_slack_ticks):
-                                    limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
-                                    short_call_option_to_close = OrderSamples.LimitOrder("BUY", -position, limit_price)
-                                    short_call_option_to_close.orderType = "LMT"
-                                    short_call_option_to_close.action = "BUY"
-                                    short_call_option_to_close.totalQuantity = -position
-                                    short_call_option_to_close.lmtPrice = limit_price
-                                    short_call_option_to_close.transmit = self.transmit_orders
-                                    short_call_option_OCA_order_to_close_tuple = (limit_price, short_call_option_to_close)
-                                    short_call_option_OCA_order_to_close_tuples.append(short_call_option_OCA_order_to_close_tuple)
-                                short_call_option_OCA_orders_to_close = [o for _price, o in short_call_option_OCA_order_to_close_tuples]
-                                OrderSamples.OneCancelsAll("DownCloseShortCallOCO_"+str(testapp.nextValidOrderId), short_call_option_OCA_orders_to_close, 2)
-                                for _price, o in short_call_option_OCA_order_to_close_tuples:
-                                    o.account = self.place_orders_to_account
-                                    testapp.placeOrder(testapp.nextValidOrderId, short_call_option_contract_to_close, o)
-                                    short_call_option_OCAOrderIds.append(testapp.nextValidOrderId)
-                                    testapp.nextValidOrderId += 1
-                                    self.log_file_handle.write("closing short call position for strike:" + str(strike) + "short_call_option_contract_to_close:" + str(short_call_option_contract_to_close) + "limit_price:" + str(_price) + "\n")
-                                    time.sleep(self.intra_order_sleep_time_ms/1000)
+                                if spread >= 0:
+                                    if bid_price is not None and ask_price is not None and ask_price >= 10:
+                                        tick_size = 0.25
+                                    spread_size = int((ask_price - bid_price)/tick_size)
+                                    for limit_price_tick_num in range(spread_size+1+2*self.limit_price_slack_ticks):
+                                        limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
+                                        short_call_option_to_close = OrderSamples.LimitOrder("BUY", -position, limit_price)
+                                        short_call_option_to_close.orderType = "LMT"
+                                        short_call_option_to_close.action = "BUY"
+                                        short_call_option_to_close.totalQuantity = -position
+                                        short_call_option_to_close.lmtPrice = limit_price
+                                        short_call_option_to_close.transmit = self.transmit_orders
+                                        short_call_option_OCA_order_to_close_tuple = (limit_price, short_call_option_to_close)
+                                        short_call_option_OCA_order_to_close_tuples.append(short_call_option_OCA_order_to_close_tuple)
+                                    short_call_option_OCA_orders_to_close = [o for _price, o in short_call_option_OCA_order_to_close_tuples]
+                                    OrderSamples.OneCancelsAll("DownCloseShortCallOCO_"+str(testapp.nextValidOrderId), short_call_option_OCA_orders_to_close, 2)
+                                    for _price, o in short_call_option_OCA_order_to_close_tuples:
+                                        o.account = self.place_orders_to_account
+                                        o.outsideRth = True
+                                        testapp.placeOrder(testapp.nextValidOrderId, short_call_option_contract_to_close, o)
+                                        short_call_option_OCAOrderIds.append(testapp.nextValidOrderId)
+                                        testapp.nextValidOrderId += 1
+                                        self.log_file_handle.write("closing short call position for strike:" + str(strike) + "short_call_option_contract_to_close:" + str(short_call_option_contract_to_close) + "limit_price:" + str(_price) + "\n")
+                                        #caccel pending stop limit orders
+                                        self.cancelpendingstplmtorder(testapp, strike, "C")
+                                        time.sleep(self.intra_order_sleep_time_ms/1000)
+                                else:
+                                    print("skip closing short call position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
+                                    self.log_file_handle.write("skip closing short call position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
 
                 #close all short put positions with strike price greater than lastESPrice_
                 for strike, position in self.short_put_option_positions.items():
@@ -2904,29 +2942,35 @@ class ESDynamicStraddleStrategy(Object):
                                 bid_price = self.ES_FOP_quote_bid_put[strike]
                                 ask_price = self.ES_FOP_quote_ask_put[strike]
                                 spread = ask_price - bid_price
-                                assert spread >= 0
-                                if bid_price is not None and ask_price is not None and ask_price >= 10:
-                                    tick_size = 0.25
-                                spread_size = int((ask_price - bid_price)/tick_size)
-                                for limit_price_tick_num in range(spread_size+1+2*self.limit_price_slack_ticks):
-                                    limit_price = bid_price -self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
-                                    short_put_option_to_close = OrderSamples.LimitOrder("BUY", -position, limit_price)
-                                    short_put_option_to_close.orderType = "LMT"
-                                    short_put_option_to_close.action = "BUY"
-                                    short_put_option_to_close.totalQuantity = -position
-                                    short_put_option_to_close.lmtPrice = limit_price
-                                    short_put_option_to_close.transmit = self.transmit_orders
-                                    short_put_option_OCA_order_to_close_tuple = (limit_price, short_put_option_to_close)
-                                    short_put_option_OCA_order_to_close_tuples.append(short_put_option_OCA_order_to_close_tuple)
-                                short_put_option_OCA_orders_to_close = [o for _price, o in short_put_option_OCA_order_to_close_tuples]
-                                OrderSamples.OneCancelsAll("DownCloseShortPutOCO_"+str(testapp.nextValidOrderId), short_put_option_OCA_orders_to_close, 2)
-                                for _price, o in short_put_option_OCA_order_to_close_tuples:
-                                    o.account = self.place_orders_to_account
-                                    testapp.placeOrder(testapp.nextValidOrderId, short_put_option_contract_to_close, o)
-                                    short_put_option_OCAOrderIds.append(testapp.nextValidOrderId)
-                                    testapp.nextValidOrderId += 1
-                                    self.log_file_handle.write("closing short put position for strike:" + str(strike) + "short_put_option_contract_to_close:" + str(short_put_option_contract_to_close) + "limit_price:" + str(_price) + "\n")
-                                    time.sleep(self.intra_order_sleep_time_ms/1000)
+                                if spread >= 0:
+                                    if bid_price is not None and ask_price is not None and ask_price >= 10:
+                                        tick_size = 0.25
+                                    spread_size = int((ask_price - bid_price)/tick_size)
+                                    for limit_price_tick_num in range(spread_size+1+2*self.limit_price_slack_ticks):
+                                        limit_price = bid_price -self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
+                                        short_put_option_to_close = OrderSamples.LimitOrder("BUY", -position, limit_price)
+                                        short_put_option_to_close.orderType = "LMT"
+                                        short_put_option_to_close.action = "BUY"
+                                        short_put_option_to_close.totalQuantity = -position
+                                        short_put_option_to_close.lmtPrice = limit_price
+                                        short_put_option_to_close.transmit = self.transmit_orders
+                                        short_put_option_OCA_order_to_close_tuple = (limit_price, short_put_option_to_close)
+                                        short_put_option_OCA_order_to_close_tuples.append(short_put_option_OCA_order_to_close_tuple)
+                                    short_put_option_OCA_orders_to_close = [o for _price, o in short_put_option_OCA_order_to_close_tuples]
+                                    OrderSamples.OneCancelsAll("DownCloseShortPutOCO_"+str(testapp.nextValidOrderId), short_put_option_OCA_orders_to_close, 2)
+                                    for _price, o in short_put_option_OCA_order_to_close_tuples:
+                                        o.account = self.place_orders_to_account
+                                        o.outsideRth = True
+                                        testapp.placeOrder(testapp.nextValidOrderId, short_put_option_contract_to_close, o)
+                                        short_put_option_OCAOrderIds.append(testapp.nextValidOrderId)
+                                        testapp.nextValidOrderId += 1
+                                        self.log_file_handle.write("closing short put position for strike:" + str(strike) + "short_put_option_contract_to_close:" + str(short_put_option_contract_to_close) + "limit_price:" + str(_price) + "\n")
+                                        #caccel pending stop limit orders
+                                        self.cancelpendingstplmtorder(testapp, strike, "P")
+                                        time.sleep(self.intra_order_sleep_time_ms/1000)
+                                else:
+                                    print("skip closing short put position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
+                                    self.log_file_handle.write("skip closing short put position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
                                 
                 down_call_buy_order_needed  = True
                 total_long_call_positions = 0
@@ -2968,6 +3012,7 @@ class ESDynamicStraddleStrategy(Object):
                         print("placing call buy order for strike:", _strike, "down_call_buy_option_contract:", down_call_buy_option_contract)
                         self.log_file_handle.write("placing call buy order for strike:" + str(_strike) + "down_call_buy_option_contract:" + str(down_call_buy_option_contract) + "\n")
                         o.account = self.place_orders_to_account
+                        o.outsideRth = True
                         testapp.placeOrder(testapp.nextValidOrderId, down_call_buy_option_contract, o)
                         down_call_buy_OCAOrderId = testapp.nextValidOrderId
                         testapp.nextValidOrderId += 1
@@ -3015,6 +3060,7 @@ class ESDynamicStraddleStrategy(Object):
                         print("placing put buy order for strike:", _strike, "down_put_buy_option_contract:", down_put_buy_option_contract)
                         self.log_file_handle.write("placing put buy order for strike:" + str(_strike) + "down_put_buy_option_contract:" + str(down_put_buy_option_contract) + "\n")
                         o.account = self.place_orders_to_account
+                        o.outsideRth = True
                         testapp.placeOrder(testapp.nextValidOrderId, down_put_buy_option_contract, o)
                         down_put_buy_OCAOrderId = testapp.nextValidOrderId
                         testapp.nextValidOrderId += 1
@@ -3033,39 +3079,8 @@ class ESDynamicStraddleStrategy(Object):
                     short_call_option_contract_to_open.right = "C"
                     short_call_option_contract_to_open.multiplier = "50"
                     print("placing call order for strike:", straddle_strike, "short_call_option_contract_to_open:", short_call_option_contract_to_open)
-                    self.log_file_handle.write("placing call order for strike:" + str(straddle_strike) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "\n")
-
-                    short_call_option_OCA_order_to_open_tuples = []
-                    short_call_option_OCAOrderIds = []
-                    tick_size = 0.05
-                    #decide tick size based on quote price
-                    if straddle_strike in self.ES_FOP_quote_bid_call:
-                        bid_price = self.ES_FOP_quote_bid_call[straddle_strike]
-                        ask_price = self.ES_FOP_quote_ask_call[straddle_strike]
-                        spread = ask_price - bid_price
-                        assert spread >= 0
-                        if bid_price is not None and ask_price is not None and ask_price >= 10:
-                            tick_size = 0.25
-                        spread_size = int((ask_price - bid_price)/tick_size)
-                        for limit_price_tick_num in reversed(range(spread_size+1+2*self.limit_price_slack_ticks)):
-                            limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
-                            short_call_option_to_open = OrderSamples.LimitOrder("SELL", 1, limit_price)
-                            short_call_option_to_open.orderType = "LMT"
-                            short_call_option_to_open.action = "SELL"
-                            short_call_option_to_open.totalQuantity = 1
-                            short_call_option_to_open.lmtPrice = limit_price
-                            short_call_option_to_open.transmit = self.transmit_orders
-                            short_call_option_OCA_order_to_open_tuple = (limit_price, short_call_option_to_open)
-                            short_call_option_OCA_order_to_open_tuples.append(short_call_option_OCA_order_to_open_tuple)
-                        short_call_option_OCA_orders_to_open = [o for _price, o in short_call_option_OCA_order_to_open_tuples]
-                        OrderSamples.OneCancelsAll("DownShortCallOCO_"+str(testapp.nextValidOrderId), short_call_option_OCA_orders_to_open, 2)
-                        for _price, o in short_call_option_OCA_order_to_open_tuples:
-                            o.account = self.place_orders_to_account
-                            testapp.placeOrder(testapp.nextValidOrderId, short_call_option_contract_to_open, o)
-                            short_call_option_OCAOrderIds.append(testapp.nextValidOrderId)
-                            testapp.nextValidOrderId += 1
-                            self.log_file_handle.write("placing call order for strike:" + str(straddle_strike) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "limit_price:" + str(_price) + "\n")
-                            time.sleep(self.intra_order_sleep_time_ms/1000)
+                    self.log_file_handle.write("placing call order for strike:" + str(straddle_strike) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "\n")                    
+                    self.place_short_call_option_to_open_orders(testapp, straddle_strike, short_call_option_contract_to_open)
                     
                 if self.short_put_option_positions.get(lastESPrice_, 0) == 0:
                     straddle_strike = lastESPrice_
@@ -3080,38 +3095,7 @@ class ESDynamicStraddleStrategy(Object):
                     short_put_option_contract_to_open.multiplier = "50"
                     print("placing put order for strike:", straddle_strike, "short_put_option_contract_to_open:", short_put_option_contract_to_open)
                     self.log_file_handle.write("placing put order for strike:" + str(straddle_strike) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "\n")
-
-                    short_put_option_OCA_order_to_open_tuples = []
-                    short_put_option_OCAOrderIds = []
-                    tick_size = 0.05
-                    #decide tick size based on quote price
-                    if straddle_strike in self.ES_FOP_quote_bid_put:
-                        bid_price = self.ES_FOP_quote_bid_put[straddle_strike]
-                        ask_price = self.ES_FOP_quote_ask_put[straddle_strike]
-                        spread = ask_price - bid_price
-                        assert spread >= 0
-                        if bid_price is not None and ask_price is not None and ask_price >= 10:
-                            tick_size = 0.25
-                        spread_size = int((ask_price - bid_price)/tick_size)
-                        for limit_price_tick_num in reversed(range(spread_size+1+2*self.limit_price_slack_ticks)):
-                            limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
-                            short_put_option_to_open = OrderSamples.LimitOrder("SELL", 1, limit_price)
-                            short_put_option_to_open.orderType = "LMT"
-                            short_put_option_to_open.action = "SELL"
-                            short_put_option_to_open.totalQuantity = 1
-                            short_put_option_to_open.lmtPrice = limit_price
-                            short_put_option_to_open.transmit = self.transmit_orders
-                            short_put_option_OCA_order_to_open_tuple = (limit_price, short_put_option_to_open)
-                            short_put_option_OCA_order_to_open_tuples.append(short_put_option_OCA_order_to_open_tuple)
-                        short_put_option_OCA_orders_to_open = [o for _price, o in short_put_option_OCA_order_to_open_tuples]
-                        OrderSamples.OneCancelsAll("DownShortPutOCO_"+str(testapp.nextValidOrderId), short_put_option_OCA_orders_to_open, 2)
-                        for _price, o in short_put_option_OCA_order_to_open_tuples:
-                            o.account = self.place_orders_to_account
-                            testapp.placeOrder(testapp.nextValidOrderId, short_put_option_contract_to_open, o)
-                            short_put_option_OCAOrderIds.append(testapp.nextValidOrderId)
-                            testapp.nextValidOrderId += 1
-                            self.log_file_handle.write("placing put order for strike:" + str(straddle_strike) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "limit_price:" + str(_price) + "\n")
-                            time.sleep(self.intra_order_sleep_time_ms/1000)
+                    self.place_short_put_option_to_open_orders(testapp, straddle_strike, short_put_option_contract_to_open)
 
                 self.lastESPrice = lastESPrice_
                 print("set new lastESPrice to:", self.lastESPrice)
@@ -3119,6 +3103,176 @@ class ESDynamicStraddleStrategy(Object):
             else:
                 assert self.lastESPrice % 5 == 0
                 self.priceDirection = 0
+                current_time = datetime.datetime.now()
+                self.log_file_handle.write("ES price update: " + str(self.currentESPrice) + " direction: no change " + " current_time: " + str(current_time) + "\n")
+
+    def place_short_put_option_to_open_orders(self, testapp, straddle_strike, short_put_option_contract_to_open):
+        short_put_option_OCA_order_to_open_tuples = []
+        short_put_option_OCAOrderIds = []
+        short_put_option_bracket_order_tuples = []
+        tick_size = 0.05
+                    #decide tick size based on quote price
+        if straddle_strike in self.ES_FOP_quote_bid_put:
+            bid_price = self.ES_FOP_quote_bid_put[straddle_strike]
+            ask_price = self.ES_FOP_quote_ask_put[straddle_strike]
+            spread = ask_price - bid_price
+            if spread >= 0:
+                if bid_price is not None and ask_price is not None and ask_price >= 10:
+                    tick_size = 0.25
+                spread_size = int((ask_price - bid_price)/tick_size)
+                for limit_price_tick_num in reversed(range(spread_size+1+2*self.limit_price_slack_ticks)):
+                    limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
+                    short_put_option_to_open = OrderSamples.LimitOrder("SELL", 1, limit_price)
+                    short_put_option_to_open.orderType = "LMT"
+                    short_put_option_to_open.action = "SELL"
+                    short_put_option_to_open.totalQuantity = 1
+                    short_put_option_to_open.lmtPrice = limit_price
+                    short_put_option_to_open.transmit = self.transmit_orders if not self.attach_bracket_order else False
+                    short_put_option_OCA_order_to_open_tuple = (limit_price, short_put_option_to_open)
+                    short_put_option_OCA_order_to_open_tuples.append(short_put_option_OCA_order_to_open_tuple)
+                    if self.attach_bracket_order:
+                        short_put_option_to_open_profit_order_limit_price = limit_price/4
+                        if short_put_option_to_open_profit_order_limit_price >= 10:
+                            short_put_option_to_open_profit_order_limit_price = round(short_put_option_to_open_profit_order_limit_price * 4) / 4
+                        else:
+                            short_put_option_to_open_profit_order_limit_price = round(short_put_option_to_open_profit_order_limit_price * 20) / 20
+                        short_put_option_to_open_profit_order_stop_price = limit_price + 5
+                        if short_put_option_to_open_profit_order_stop_price >= 10:
+                            short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 4) / 4
+                        else:
+                            short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 20) / 20
+                        short_put_option_to_open_profit_order_stop_limit_price = short_put_option_to_open_profit_order_stop_price + 10
+                        if short_put_option_to_open_profit_order_stop_limit_price >= 10:
+                            short_put_option_to_open_profit_order_stop_limit_price = round(short_put_option_to_open_profit_order_stop_limit_price * 4) / 4
+                        else:
+                            short_put_option_to_open_profit_order_stop_limit_price = round(short_put_option_to_open_profit_order_stop_limit_price * 20) / 20
+                        short_put_option_to_open_profit_order = OrderSamples.LimitOrder("BUY", 1, short_put_option_to_open_profit_order_limit_price)
+                        short_put_option_to_open_profit_order.orderType = "LMT"
+                        short_put_option_to_open_profit_order.action = "BUY"
+                        short_put_option_to_open_profit_order.totalQuantity = 1
+                        short_put_option_to_open_profit_order.lmtPrice = short_put_option_to_open_profit_order_limit_price
+                        short_put_option_to_open_profit_order.transmit = False
+                        short_put_option_to_open_loss_order = Order()
+                        short_put_option_to_open_loss_order.orderType = "STP LMT"
+                        short_put_option_to_open_loss_order.action = "BUY"
+                        short_put_option_to_open_loss_order.totalQuantity = 1
+                        short_put_option_to_open_loss_order.auxPrice = short_put_option_to_open_profit_order_stop_price
+                        short_put_option_to_open_loss_order.lmtPrice = short_put_option_to_open_profit_order_stop_limit_price
+                        short_put_option_to_open_loss_order.transmit = self.transmit_orders
+                        short_put_option_bracket_order_tuple = (short_put_option_to_open_profit_order, short_put_option_to_open_loss_order)
+                        short_put_option_bracket_order_tuples.append(short_put_option_bracket_order_tuple)
+                short_put_option_OCA_orders_to_open = [o for _price, o in short_put_option_OCA_order_to_open_tuples]
+                OrderSamples.OneCancelsAll("UpShortPutOCO_"+str(testapp.nextValidOrderId), short_put_option_OCA_orders_to_open, 2)
+                for _price, o in short_put_option_OCA_order_to_open_tuples:
+                    o.account = self.place_orders_to_account
+                    o.outsideRth = True
+                    short_put_option_to_open_order_id = testapp.nextValidOrderId
+                    testapp.placeOrder(short_put_option_to_open_order_id, short_put_option_contract_to_open, o)
+                    short_put_option_OCAOrderIds.append(short_put_option_to_open_order_id)
+                    testapp.nextValidOrderId += 1
+                    if self.attach_bracket_order:
+                        short_put_option_to_open_profit_order, short_put_option_to_open_loss_order = short_put_option_bracket_order_tuples.pop()
+                        short_put_option_to_open_profit_order.account = self.place_orders_to_account
+                        short_put_option_to_open_profit_order.parentId = short_put_option_to_open_order_id
+                        short_put_option_to_open_profit_order.outsideRth = True
+                        short_put_option_to_open_profit_order.triggerMethod = 1
+                        short_put_option_to_open_loss_order.account = self.place_orders_to_account
+                        short_put_option_to_open_loss_order.parentId = short_put_option_to_open_order_id
+                        short_put_option_to_open_loss_order.outsideRth = True
+                        short_put_option_to_open_loss_order.triggerMethod = 1
+                        testapp.placeOrder(testapp.nextValidOrderId, short_put_option_contract_to_open, short_put_option_to_open_profit_order)
+                        testapp.nextValidOrderId += 1
+                        testapp.placeOrder(testapp.nextValidOrderId, short_put_option_contract_to_open, short_put_option_to_open_loss_order)
+                        testapp.nextValidOrderId += 1
+                    self.log_file_handle.write("placing put order for strike:" + str(straddle_strike) + "limit_price:" + str(_price) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "profit_order:" + str(short_put_option_to_open_profit_order) + "loss_order:" + str(short_put_option_to_open_loss_order) + "\n")
+                    time.sleep(self.intra_order_sleep_time_ms/1000)
+            else:
+                print("skip placing put order for strike:", straddle_strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
+                self.log_file_handle.write("skip placing put order for strike:" + str(straddle_strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
+
+    def place_short_call_option_to_open_orders(self, testapp, straddle_strike, short_call_option_contract_to_open):
+        short_call_option_OCA_order_to_open_tuples = []
+        short_call_option_OCAOrderIds = []
+        short_call_option_bracket_order_tuples = []
+        tick_size = 0.05
+                    #decide tick size based on quote price
+        if straddle_strike in self.ES_FOP_quote_bid_call:
+            bid_price = self.ES_FOP_quote_bid_call[straddle_strike]
+            ask_price = self.ES_FOP_quote_ask_call[straddle_strike]
+            spread = ask_price - bid_price
+            if spread >= 0:
+                if bid_price is not None and ask_price is not None and ask_price >= 10:
+                    tick_size = 0.25
+                spread_size = int((ask_price - bid_price)/tick_size)
+                for limit_price_tick_num in reversed(range(spread_size+1+2*self.limit_price_slack_ticks)):
+                    limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
+                    short_call_option_to_open = OrderSamples.LimitOrder("SELL", 1, limit_price)
+                    short_call_option_to_open.orderType = "LMT"
+                    short_call_option_to_open.action = "SELL"
+                    short_call_option_to_open.totalQuantity = 1
+                    short_call_option_to_open.lmtPrice = limit_price
+                    short_call_option_to_open.transmit = self.transmit_orders if not self.attach_bracket_order else False
+                    short_call_option_OCA_order_to_open_tuple = (limit_price, short_call_option_to_open)
+                    short_call_option_OCA_order_to_open_tuples.append(short_call_option_OCA_order_to_open_tuple)
+                    if self.attach_bracket_order:
+                        short_call_option_to_open_profit_order_limit_price = limit_price/4
+                        if short_call_option_to_open_profit_order_limit_price >= 10:
+                            short_call_option_to_open_profit_order_limit_price = round(short_call_option_to_open_profit_order_limit_price * 4) / 4
+                        else:
+                            short_call_option_to_open_profit_order_limit_price = round(short_call_option_to_open_profit_order_limit_price * 20) / 20
+                        short_call_option_to_open_profit_order_stop_price = limit_price + 5
+                        if short_call_option_to_open_profit_order_stop_price >= 10:
+                            short_call_option_to_open_profit_order_stop_price = round(short_call_option_to_open_profit_order_stop_price * 4) / 4
+                        else:
+                            short_call_option_to_open_profit_order_stop_price = round(short_call_option_to_open_profit_order_stop_price * 20) / 20
+                        short_call_option_to_open_profit_order_stop_limit_price = short_call_option_to_open_profit_order_stop_price + 10
+                        if short_call_option_to_open_profit_order_stop_limit_price >= 10:
+                            short_call_option_to_open_profit_order_stop_limit_price = round(short_call_option_to_open_profit_order_stop_limit_price * 4) / 4
+                        else:
+                            short_call_option_to_open_profit_order_stop_limit_price = round(short_call_option_to_open_profit_order_stop_limit_price * 20) / 20
+                        short_call_option_to_open_profit_order = OrderSamples.LimitOrder("BUY", 1, short_call_option_to_open_profit_order_limit_price)
+                        short_call_option_to_open_profit_order.orderType = "LMT"
+                        short_call_option_to_open_profit_order.action = "BUY"
+                        short_call_option_to_open_profit_order.totalQuantity = 1
+                        short_call_option_to_open_profit_order.lmtPrice = short_call_option_to_open_profit_order_limit_price
+                        short_call_option_to_open_profit_order.transmit = False
+                        short_call_option_to_open_loss_order = Order()
+                        short_call_option_to_open_loss_order.orderType = "STP LMT"
+                        short_call_option_to_open_loss_order.action = "BUY"
+                        short_call_option_to_open_loss_order.totalQuantity = 1
+                        short_call_option_to_open_loss_order.auxPrice = short_call_option_to_open_profit_order_stop_price
+                        short_call_option_to_open_loss_order.lmtPrice = short_call_option_to_open_profit_order_stop_limit_price
+                        short_call_option_to_open_loss_order.transmit = self.transmit_orders
+                        short_call_option_bracket_order_tuple = (short_call_option_to_open_profit_order, short_call_option_to_open_loss_order)
+                        short_call_option_bracket_order_tuples.append(short_call_option_bracket_order_tuple)
+                short_call_option_OCA_orders_to_open = [o for _price, o in short_call_option_OCA_order_to_open_tuples]
+                OrderSamples.OneCancelsAll("UpShortCallOCO_"+str(testapp.nextValidOrderId), short_call_option_OCA_orders_to_open, 2)
+                for _price, o in short_call_option_OCA_order_to_open_tuples:
+                    o.account = self.place_orders_to_account
+                    o.outsideRth = True
+                    short_call_option_to_open_order_id = testapp.nextValidOrderId
+                    testapp.placeOrder(short_call_option_to_open_order_id, short_call_option_contract_to_open, o)
+                    short_call_option_OCAOrderIds.append(short_call_option_to_open_order_id)
+                    testapp.nextValidOrderId += 1
+                    if self.attach_bracket_order:
+                        short_call_option_to_open_profit_order, short_call_option_to_open_loss_order = short_call_option_bracket_order_tuples.pop()
+                        short_call_option_to_open_profit_order.account = self.place_orders_to_account
+                        short_call_option_to_open_profit_order.parentId = short_call_option_to_open_order_id
+                        short_call_option_to_open_profit_order.outsideRth = True
+                        short_call_option_to_open_profit_order.triggerMethod = 1
+                        short_call_option_to_open_loss_order.account = self.place_orders_to_account
+                        short_call_option_to_open_loss_order.parentId = short_call_option_to_open_order_id
+                        short_call_option_to_open_loss_order.outsideRth = True
+                        short_call_option_to_open_loss_order.triggerMethod = 1
+                        testapp.placeOrder(testapp.nextValidOrderId, short_call_option_contract_to_open, short_call_option_to_open_profit_order)
+                        testapp.nextValidOrderId += 1
+                        testapp.placeOrder(testapp.nextValidOrderId, short_call_option_contract_to_open, short_call_option_to_open_loss_order)
+                        testapp.nextValidOrderId += 1
+                    self.log_file_handle.write("placing call order for strike:" + str(straddle_strike) + "limit_price:" + str(_price) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "profit_order:" + str(short_call_option_to_open_profit_order) + "loss_order:" + str(short_call_option_to_open_loss_order) + "\n")
+                    time.sleep(self.intra_order_sleep_time_ms/1000)
+            else:
+                print("skip placing call order for strike:", straddle_strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
+                self.log_file_handle.write("skip placing call order for strike:" + str(straddle_strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
 
 def main():
     SetupLogger()
