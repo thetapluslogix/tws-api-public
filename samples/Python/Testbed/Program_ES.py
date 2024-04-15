@@ -2421,11 +2421,15 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240412"
+        self.OptionTradeDate = "20240415"
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
         self.long_put_option_positions = {} #key is strike, value is position
+        self.short_call_option_avgcost = {}  #key is strike, value is avgcost
+        self.long_call_option_avgcost = {} #key is strike, value is avgcost
+        self.short_put_option_avgcost = {}  #key is strike, value is avgcost
+        self.long_put_option_avgcost = {} #key is strike, value is avgcost
         self.futures_positions = []
         self.ES_FOP_quote_bid_call = {}
         self.ES_FOP_quote_bid_put = {}
@@ -2487,33 +2491,41 @@ class ESDynamicStraddleStrategy(Object):
                     if position > 0:
                         if contract.right == "C":
                             self.long_call_option_positions[contract.strike] = position
+                            self.long_call_option_avgcost[contract.strike] = avgCost
                         elif contract.right == "P":
                             self.long_put_option_positions[contract.strike] = position
+                            self.long_put_option_avgcost[contract.strike] = avgCost
                     elif position < 0:
                         if contract.right == "C":
                             self.short_call_option_positions[contract.strike] = position
+                            self.short_call_option_avgcost[contract.strike] = avgCost
                         elif contract.right == "P":
                             self.short_put_option_positions[contract.strike] = position
+                            self.short_put_option_avgcost[contract.strike] = avgCost
                     elif position == 0:
                         if contract.right == "C":
                             if contract.strike in self.long_call_option_positions:
                                 del self.long_call_option_positions[contract.strike]
+                                del self.long_call_option_avgcost[contract.strike]
                             if contract.strike in self.short_call_option_positions:
                                 del self.short_call_option_positions[contract.strike]
+                                del self.short_call_option_avgcost[contract.strike]
                         elif contract.right == "P":
                             if contract.strike in self.long_put_option_positions:
                                 del self.long_put_option_positions[contract.strike]
+                                del self.long_put_option_avgcost[contract.strike]
                             if contract.strike in self.short_put_option_positions:
                                 del self.short_put_option_positions[contract.strike]
+                                del self.short_put_option_avgcost[contract.strike]
                 #print updated positions
-                print("long_call_option_positions:", self.long_call_option_positions)
-                self.log_file_handle.write("long_call_option_positions:" + str(self.long_call_option_positions) + "\n")
-                print("short_call_option_positions:", self.short_call_option_positions)
-                self.log_file_handle.write("short_call_option_positions:" + str(self.short_call_option_positions) + "\n")
-                print("long_put_option_positions:", self.long_put_option_positions)
-                self.log_file_handle.write("long_put_option_positions:" + str(self.long_put_option_positions) + "\n")
-                print("short_put_option_positions:", self.short_put_option_positions)
-                self.log_file_handle.write("short_put_option_positions:" + str(self.short_put_option_positions) + "\n")
+                print("long_call_option_positions:", self.long_call_option_positions, "long_call_option_avgcost:", self.long_call_option_avgcost)
+                self.log_file_handle.write("long_call_option_positions:" + str(self.long_call_option_positions) + "long_call_option_avgcost:" + str(self.long_call_option_avgcost) + "\n")
+                print("short_call_option_positions:", self.short_call_option_positions, "short_call_option_avgcost:", self.short_call_option_avgcost)
+                self.log_file_handle.write("short_call_option_positions:" + str(self.short_call_option_positions) + "short_call_option_avgcost:" + str(self.short_call_option_avgcost) + "\n")
+                print("long_put_option_positions:", self.long_put_option_positions, "long_put_option_avgcost:", self.long_put_option_avgcost)
+                self.log_file_handle.write("long_put_option_positions:" + str(self.long_put_option_positions) + "long_put_option_avgcost:" + str(self.long_put_option_avgcost) + "\n")
+                print("short_put_option_positions:", self.short_put_option_positions, "short_put_option_avgcost:", self.short_put_option_avgcost)
+                self.log_file_handle.write("short_put_option_positions:" + str(self.short_put_option_positions) + "short_put_option_avgcost:" + str(self.short_put_option_avgcost) + "\n")
             elif msg_type == "open_order":
                 order_id = msg[1]
                 contract = msg[2]
@@ -2522,28 +2534,86 @@ class ESDynamicStraddleStrategy(Object):
                 print("open_order message received. order_id:", order_id, "contract:", contract, "order:", order, "order_state:", order_state)
                 self.log_file_handle.write("open_order message received. order_id:" + str(order_id) + " contract:" + str(contract) + " order:" + str(order) + " order_state:" + str(order_state) + "\n")
                 if contract.symbol == "ES" and contract.secType == "FOP" and contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
-                    if order.action == "BUY" and order.orderType == "STP LMT" and order.lmtPrice is not None and order.lmtPrice > 0 and order.auxPrice is not None and order.auxPrice > 0 and OrderState.status == "PreSubmitted":
+                    if order.action == "BUY" and order.orderType == "STP LMT" and order.lmtPrice is not None and order.lmtPrice > 0 and order.auxPrice is not None and order.auxPrice > 0 and order_state.status == "PreSubmitted":
                         if contract.right == "C":
+                            if contract.strike not in self.call_stplmt_open_orders_tuples:
+                                self.call_stplmt_open_orders_tuples[contract.strike] = []
                             self.call_stplmt_open_orders_tuples[contract.strike].append((order_id, contract, order, order_state))
                         elif contract.right == "P":
+                            if contract.strike not in self.put_stplmt_open_orders_tuples:
+                                self.put_stplmt_open_orders_tuples[contract.strike] = []
                             self.put_stplmt_open_orders_tuples[contract.strike].append((order_id, contract, order, order_state))
 
         #request currently open orders
         testapp.reqAllOpenOrders()
 
     def cancelpendingstplmtorder(self, testapp : TestApp, strike, right):
+        #get current time in YYYYMMDD-HH:MM:SS format
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H:%M:%S")
         if right == "C":
             for strike, stplmt_open_orders_tuples in self.call_stplmt_open_orders_tuples.items():
                 for order_id, contract, order, order_state in stplmt_open_orders_tuples:
-                    testapp.cancelOrder(order_id)
+                    testapp.cancelOrder(order_id,current_time)
                     #remove the order from the list
                     self.call_stplmt_open_orders_tuples[strike].remove((order_id, contract, order, order_state))
         else:
             for strike, stplmt_open_orders_tuples in self.put_stplmt_open_orders_tuples.items():
                 for order_id, contract, order, order_state in stplmt_open_orders_tuples:
-                    testapp.cancelOrder(order_id)
+                    testapp.cancelOrder(order_id, current_time)
                     #remove the order from the list
                     self.put_stplmt_open_orders_tuples[strike].remove((order_id, contract, order, order_state))
+
+    def sanity_check_and_maintenanace(self, testapp : TestApp, newESPrice):
+        return
+        #this function enforces the following rules:
+        #1. every position should have a bracket order in place
+        #2. every bracket order should have a corresponding position
+
+        #get current time in YYYYMMDD-HH:MM:SS format
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H:%M:%S")
+        #1. check whether every short position has a bracket order in place
+        for strike, position in self.short_call_option_positions.items():
+            strike_call_not_in_call_stplmt_open_orders_tuples = strike not in self.call_stplmt_open_orders_tuples
+            strike_call_order_quantity_not_equal_to_position = False
+            strike_call_bracket_order_quantity = 0
+            strike_call_position_quantity = position
+
+            if strike in self.call_stplmt_open_orders_tuples:
+                for order_id, contract, order, order_state in self.call_stplmt_open_orders_tuples[strike]:
+                    strike_call_bracket_order_quantity = order.totalQuantity
+            
+            if -position > strike_call_bracket_order_quantity:
+                needed_quantity = -position - strike_call_bracket_order_quantity
+                #create a bracket order for this position
+                call_contract = Contract()
+                call_contract.symbol = "ES"
+                call_contract.secType = "FOP"
+                call_contract.exchange = "CME"
+                call_contract.currency = "USD"
+                call_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
+                call_contract.right = "C"
+                call_contract.multiplier = "50"
+                call_contract.strike = strike
+                call_order = Order()
+                call_order.action = "BUY"
+                call_order.orderType = "STP LMT"
+                call_order.totalQuantity = needed_quantity
+                position_price =  self.short_call_option_avgcost[strike]
+                short_put_option_to_open_profit_order_limit_price = position_price/4
+                if short_put_option_to_open_profit_order_limit_price >= 10:
+                    short_put_option_to_open_profit_order_limit_price = round(short_put_option_to_open_profit_order_limit_price * 4) / 4
+                else:
+                    short_put_option_to_open_profit_order_limit_price = round(short_put_option_to_open_profit_order_limit_price * 20) / 20
+                short_put_option_to_open_profit_order_stop_price = position_price + 5
+                if short_put_option_to_open_profit_order_stop_price >= 10:
+                    short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 4) / 4
+                else:
+                    short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 20) / 20
+                short_put_option_to_open_profit_order_stop_limit_price = short_put_option_to_open_profit_order_stop_price + 10
+                if short_put_option_to_open_profit_order_stop_limit_price >= 10:
+                    short_put_option_to_open_profit_order_stop_limit_price = round(short_put_option_to_open_profit_order_stop_limit_price * 4) / 4
+                else:
+                    short_put_option_to_open_profit_order_stop_limit_price = round(short_put_option_to_open_profit_order_stop_limit_price * 20) / 20
 
     def updateESPrice(self, newESPrice, testapp : TestApp):
         
@@ -2599,11 +2669,16 @@ class ESDynamicStraddleStrategy(Object):
             if floor(newESPrice) % 5 != 0:
                 current_time = datetime.datetime.now()
                 self.log_file_handle.write(f"waiting for floor(newESPrice) % 5 == 0: time {str(current_time)} price {newESPrice}\n")
+                self.sanity_check_and_maintenanace(testapp, newESPrice)
                 return
             print("setting lastESPrice and currentESPrice to floor(newESPrice):", floor(newESPrice))
             self.log_file_handle.write("setting lastESPrice and currentESPrice to floor(newESPrice):" + str(floor(newESPrice)) + "\n")
             self.currentESPrice = floor(newESPrice)
-            self.lastESPrice = floor(newESPrice) - 5 #FIXME: this is a temporary hack
+            #check whether current strike already has a short straddle position, if so do nothing as we are just restarting at a state of priceDirection = 0
+            #if there is no short straddle position, then create a short straddle position with a pseudo priceDirection = 1
+            if self.currentESPrice in self.short_call_option_positions and self.currentESPrice in self.short_put_option_positions:
+                self.lastESPrice = floor(newESPrice) - 5 #FIXME: this is a temporary hack
+                print("No")
         if self.lastESPrice is not None and self.currentESPrice is not None: 
             self.currentESPrice = newESPrice
         if self.lastESPrice is not None and self.currentESPrice is not None:
@@ -3111,7 +3186,7 @@ class ESDynamicStraddleStrategy(Object):
         short_put_option_OCAOrderIds = []
         short_put_option_bracket_order_tuples = []
         tick_size = 0.05
-                    #decide tick size based on quote price
+        #decide tick size based on quote price
         if straddle_strike in self.ES_FOP_quote_bid_put:
             bid_price = self.ES_FOP_quote_bid_put[straddle_strike]
             ask_price = self.ES_FOP_quote_ask_put[straddle_strike]
@@ -3318,7 +3393,7 @@ def main():
     try:
         app = TestApp()
         if args.global_cancel:
-            app.globalCancelOnly = True
+            app.globalCancelOnly = False
         # ! [connect]
         app.connect("127.0.0.1", args.port, clientId=0)
         # ! [connect]
