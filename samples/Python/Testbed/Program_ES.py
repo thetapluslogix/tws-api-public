@@ -2448,7 +2448,8 @@ class ESDynamicStraddleStrategy(Object):
         self.call_stplmt_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
         self.put_stplmt_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
         self.profit_target_divisor = 10
-        self.stop_loss_increment = 10
+        self.stop_loss_increment = 5
+        self.stop_limit_increment = 10
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
         assert reqContract.symbol == "ES" and reqContract.secType == "FOP" and reqContract.lastTradeDateOrContractMonth == self.OptionTradeDate
@@ -3220,12 +3221,12 @@ class ESDynamicStraddleStrategy(Object):
                             short_put_option_to_open_profit_order_limit_price = round(short_put_option_to_open_profit_order_limit_price * 4) / 4
                         else:
                             short_put_option_to_open_profit_order_limit_price = round(short_put_option_to_open_profit_order_limit_price * 20) / 20
-                        short_put_option_to_open_profit_order_stop_price = limit_price + 5
+                        short_put_option_to_open_profit_order_stop_price = limit_price + self.stop_loss_increment
                         if short_put_option_to_open_profit_order_stop_price >= 10:
                             short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 4) / 4
                         else:
                             short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 20) / 20
-                        short_put_option_to_open_profit_order_stop_limit_price = short_put_option_to_open_profit_order_stop_price + self.stop_loss_increment
+                        short_put_option_to_open_profit_order_stop_limit_price = short_put_option_to_open_profit_order_stop_price + self.stop_limit_increment
                         if short_put_option_to_open_profit_order_stop_limit_price >= 10:
                             short_put_option_to_open_profit_order_stop_limit_price = round(short_put_option_to_open_profit_order_stop_limit_price * 4) / 4
                         else:
@@ -3304,12 +3305,12 @@ class ESDynamicStraddleStrategy(Object):
                             short_call_option_to_open_profit_order_limit_price = round(short_call_option_to_open_profit_order_limit_price * 4) / 4
                         else:
                             short_call_option_to_open_profit_order_limit_price = round(short_call_option_to_open_profit_order_limit_price * 20) / 20
-                        short_call_option_to_open_profit_order_stop_price = limit_price + 5
+                        short_call_option_to_open_profit_order_stop_price = limit_price + self.stop_loss_increment
                         if short_call_option_to_open_profit_order_stop_price >= 10:
                             short_call_option_to_open_profit_order_stop_price = round(short_call_option_to_open_profit_order_stop_price * 4) / 4
                         else:
                             short_call_option_to_open_profit_order_stop_price = round(short_call_option_to_open_profit_order_stop_price * 20) / 20
-                        short_call_option_to_open_profit_order_stop_limit_price = short_call_option_to_open_profit_order_stop_price + self.stop_loss_increment
+                        short_call_option_to_open_profit_order_stop_limit_price = short_call_option_to_open_profit_order_stop_price + self.stop_limit_increment
                         if short_call_option_to_open_profit_order_stop_limit_price >= 10:
                             short_call_option_to_open_profit_order_stop_limit_price = round(short_call_option_to_open_profit_order_stop_limit_price * 4) / 4
                         else:
