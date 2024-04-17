@@ -2421,7 +2421,7 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240415"
+        self.OptionTradeDate = "20240417"
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
@@ -2447,6 +2447,8 @@ class ESDynamicStraddleStrategy(Object):
         self.attach_bracket_order = True
         self.call_stplmt_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
         self.put_stplmt_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
+        self.profit_target_divisor = 10
+        self.stop_loss_increment = 10
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
         assert reqContract.symbol == "ES" and reqContract.secType == "FOP" and reqContract.lastTradeDateOrContractMonth == self.OptionTradeDate
@@ -2677,8 +2679,15 @@ class ESDynamicStraddleStrategy(Object):
             #check whether current strike already has a short straddle position, if so do nothing as we are just restarting at a state of priceDirection = 0
             #if there is no short straddle position, then create a short straddle position with a pseudo priceDirection = 1
             if self.currentESPrice in self.short_call_option_positions and self.currentESPrice in self.short_put_option_positions:
+                self.priceDirection = 0
+                print("ES bid:", self.currentESPrice, "Initial direction: no change")
+                self.log_file_handle.write("ES bid:" + str(self.currentESPrice) + "Initial direction: no change\n")
+            else:
                 self.lastESPrice = floor(newESPrice) - 5 #FIXME: this is a temporary hack
-                print("No")
+                self.priceDirection = 1
+                print("ES bid:", self.currentESPrice, "Initial direction: up")
+                self.log_file_handle.write("ES bid:" + str(self.currentESPrice) + "Initial direction: up\n")
+
         if self.lastESPrice is not None and self.currentESPrice is not None: 
             self.currentESPrice = newESPrice
         if self.lastESPrice is not None and self.currentESPrice is not None:
@@ -3206,7 +3215,7 @@ class ESDynamicStraddleStrategy(Object):
                     short_put_option_OCA_order_to_open_tuple = (limit_price, short_put_option_to_open)
                     short_put_option_OCA_order_to_open_tuples.append(short_put_option_OCA_order_to_open_tuple)
                     if self.attach_bracket_order:
-                        short_put_option_to_open_profit_order_limit_price = limit_price/4
+                        short_put_option_to_open_profit_order_limit_price = limit_price/self.profit_target_divisor
                         if short_put_option_to_open_profit_order_limit_price >= 10:
                             short_put_option_to_open_profit_order_limit_price = round(short_put_option_to_open_profit_order_limit_price * 4) / 4
                         else:
@@ -3216,7 +3225,7 @@ class ESDynamicStraddleStrategy(Object):
                             short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 4) / 4
                         else:
                             short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 20) / 20
-                        short_put_option_to_open_profit_order_stop_limit_price = short_put_option_to_open_profit_order_stop_price + 10
+                        short_put_option_to_open_profit_order_stop_limit_price = short_put_option_to_open_profit_order_stop_price + self.stop_loss_increment
                         if short_put_option_to_open_profit_order_stop_limit_price >= 10:
                             short_put_option_to_open_profit_order_stop_limit_price = round(short_put_option_to_open_profit_order_stop_limit_price * 4) / 4
                         else:
@@ -3290,7 +3299,7 @@ class ESDynamicStraddleStrategy(Object):
                     short_call_option_OCA_order_to_open_tuple = (limit_price, short_call_option_to_open)
                     short_call_option_OCA_order_to_open_tuples.append(short_call_option_OCA_order_to_open_tuple)
                     if self.attach_bracket_order:
-                        short_call_option_to_open_profit_order_limit_price = limit_price/4
+                        short_call_option_to_open_profit_order_limit_price = limit_price/self.profit_target_divisor
                         if short_call_option_to_open_profit_order_limit_price >= 10:
                             short_call_option_to_open_profit_order_limit_price = round(short_call_option_to_open_profit_order_limit_price * 4) / 4
                         else:
@@ -3300,7 +3309,7 @@ class ESDynamicStraddleStrategy(Object):
                             short_call_option_to_open_profit_order_stop_price = round(short_call_option_to_open_profit_order_stop_price * 4) / 4
                         else:
                             short_call_option_to_open_profit_order_stop_price = round(short_call_option_to_open_profit_order_stop_price * 20) / 20
-                        short_call_option_to_open_profit_order_stop_limit_price = short_call_option_to_open_profit_order_stop_price + 10
+                        short_call_option_to_open_profit_order_stop_limit_price = short_call_option_to_open_profit_order_stop_price + self.stop_loss_increment
                         if short_call_option_to_open_profit_order_stop_limit_price >= 10:
                             short_call_option_to_open_profit_order_stop_limit_price = round(short_call_option_to_open_profit_order_stop_limit_price * 4) / 4
                         else:
@@ -3360,7 +3369,7 @@ def main():
     cmdLineParser.add_argument("-p", "--port", action="store", type=int,
                                dest="port", default=7496, help="The TCP port to use")
     cmdLineParser.add_argument("-C", "--global-cancel", action="store_true",
-                               dest="global_cancel", default=True,
+                               dest="global_cancel", default=False,
                                help="whether to trigger a globalCancel req")
     args = cmdLineParser.parse_args()
     print("Using args", args)
@@ -3389,25 +3398,33 @@ def main():
     # tc.reqMktData(1101, ContractSamples.USStockAtSmart(), "", False, None)
     # print(tc.reqId2nReq)
     # sys.exit(1)
+    alive = True
+    while alive:
+        try:
+            app = TestApp()
+            if args.global_cancel:
+                app.globalCancelOnly = True
+            # ! [connect]
+            app.connect("127.0.0.1", args.port, clientId=0)
+            # ! [connect]
+            print("serverVersion:%s connectionTime:%s" % (app.serverVersion(),
+                                                        app.twsConnectionTime()))
 
-    try:
-        app = TestApp()
-        if args.global_cancel:
-            app.globalCancelOnly = False
-        # ! [connect]
-        app.connect("127.0.0.1", args.port, clientId=0)
-        # ! [connect]
-        print("serverVersion:%s connectionTime:%s" % (app.serverVersion(),
-                                                      app.twsConnectionTime()))
-
-        # ! [clientrun]
-        app.run()
-        # ! [clientrun]
-    except:
-        raise
-    finally:
-        app.dumpTestCoverageSituation()
-        app.dumpReqAnsErrSituation()
+            # ! [clientrun]
+            app.run()
+            # ! [clientrun]
+        #handle keyboard interrupt
+        except KeyboardInterrupt:
+            print("Keyboard interrupt")
+            alive = False
+        except Exception as e:
+            print("Exception:", e)
+            if app.nextValidOrderId:
+                app.nextValidOrderId += 1
+        finally:
+            app.dumpTestCoverageSituation()
+            app.dumpReqAnsErrSituation()
+    app.disconnect()
 
 
 if __name__ == "__main__":
