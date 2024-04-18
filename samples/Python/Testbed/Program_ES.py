@@ -426,9 +426,14 @@ class TestApp(TestWrapper, TestClient):
     def openOrderEnd(self):
         super().openOrderEnd()
         print("OpenOrderEnd")
-        self.ESDynamicStraddleStrategy.log_file_handle.write("OpenOrderEnd\n")
-        self.ESDynamicStraddleStrategy.call_stplmt_open_orders_tuples.clear()
-        self.ESDynamicStraddleStrategy.put_stplmt_open_orders_tuples.clear()
+        #self.ESDynamicStraddleStrategy.log_file_handle.write("OpenOrderEnd\n")
+        #self.ESDynamicStraddleStrategy.call_stplmt_profit_open_orders_tuples.clear()
+        ##self.ESDynamicStraddleStrategy.put_stplmt_profit_open_orders_tuples.clear()
+        #elf.ESDynamicStraddleStrategy.call_stplmt_open_orders_tuples.clear()
+        #elf.ESDynamicStraddleStrategy.put_stplmt_open_orders_tuples.clear()
+        #self.ESDynamicStraddleStrategy.call_bracket_order_maintenance_on_hold = False
+        #self.ESDynamicStraddleStrategy.put_bracket_order_maintenance_on_hold = False
+        
         logging.debug("Received %d openOrders", len(self.permId2ord))
     # ! [openorderend]
 
@@ -2421,7 +2426,7 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240417"
+        self.OptionTradeDate = "20240418"
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
@@ -2445,11 +2450,20 @@ class ESDynamicStraddleStrategy(Object):
         self.hedge_outer_offset = 200
         self.intra_order_sleep_time_ms = 100
         self.attach_bracket_order = True
+        self.call_stplmt_profit_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
+        self.put_stplmt_profit_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
         self.call_stplmt_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
         self.put_stplmt_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
+        #self.call_bracket_order_maintenance_on_hold = False
+        #self.put_bracket_order_maintenance_on_hold = False
+        self.call_bracket_order_maintenance_on_hold_for_strike = {} #key is strike, value is True/False
+        self.put_bracket_order_maintenance_on_hold_for_strike = {} #key is strike, value is True/False
+        self.call_bracket_profit_order_maintenance_on_hold_for_strike = {} #key is strike, value is order_id
+        self.put_bracket_profit_order_maintenance_on_hold_for_strike = {} #key is strike, value is order_id
         self.profit_target_divisor = 10
         self.stop_loss_increment = 5
         self.stop_limit_increment = 10
+        self.es_contract_multiplier = 50
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
         assert reqContract.symbol == "ES" and reqContract.secType == "FOP" and reqContract.lastTradeDateOrContractMonth == self.OptionTradeDate
@@ -2541,12 +2555,26 @@ class ESDynamicStraddleStrategy(Object):
                         if contract.right == "C":
                             if contract.strike not in self.call_stplmt_open_orders_tuples:
                                 self.call_stplmt_open_orders_tuples[contract.strike] = []
-                            self.call_stplmt_open_orders_tuples[contract.strike].append((order_id, contract, order, order_state))
+                            self.call_stplmt_open_orders_tuples[contract.strike] = ((order_id, contract, order, order_state))
+                            self.call_bracket_order_maintenance_on_hold_for_strike[contract.strike] = False
                         elif contract.right == "P":
                             if contract.strike not in self.put_stplmt_open_orders_tuples:
                                 self.put_stplmt_open_orders_tuples[contract.strike] = []
-                            self.put_stplmt_open_orders_tuples[contract.strike].append((order_id, contract, order, order_state))
+                            self.put_stplmt_open_orders_tuples[contract.strike] = ((order_id, contract, order, order_state))
+                            self.put_bracket_order_maintenance_on_hold_for_strike[contract.strike] = False
 
+                    if order.action == "BUY" and order.orderType == "LMT" and order_state.status == "Submitted" and order.lmtPrice is not None and order.lmtPrice > 0:
+                        if contract.right == "C":
+                            if contract.strike not in self.call_stplmt_profit_open_orders_tuples:
+                                self.call_stplmt_profit_open_orders_tuples[contract.strike] = []
+                            self.call_stplmt_profit_open_orders_tuples[contract.strike] = ((order_id, contract, order, order_state))
+                            self.call_bracket_profit_order_maintenance_on_hold_for_strike[contract.strike] = False
+                        elif contract.right == "P":
+                            if contract.strike not in self.put_stplmt_profit_open_orders_tuples:
+                                self.put_stplmt_profit_open_orders_tuples[contract.strike] = []
+                            self.put_stplmt_profit_open_orders_tuples[contract.strike] = ((order_id, contract, order, order_state))
+                            self.put_bracket_profit_order_maintenance_on_hold_for_strike[contract.strike] = False
+    
         #request currently open orders
         testapp.reqAllOpenOrders()
 
@@ -2554,20 +2582,39 @@ class ESDynamicStraddleStrategy(Object):
         #get current time in YYYYMMDD-HH:MM:SS format
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H:%M:%S")
         if right == "C":
-            for strike, stplmt_open_orders_tuples in self.call_stplmt_open_orders_tuples.items():
+            if strike in self.call_stplmt_open_orders_tuples:
+                strike, stplmt_open_orders_tuples = self.call_stplmt_open_orders_tuples.items()
                 for order_id, contract, order, order_state in stplmt_open_orders_tuples:
                     testapp.cancelOrder(order_id,current_time)
                     #remove the order from the list
                     self.call_stplmt_open_orders_tuples[strike].remove((order_id, contract, order, order_state))
         else:
-            for strike, stplmt_open_orders_tuples in self.put_stplmt_open_orders_tuples.items():
+            if strike in self.put_stplmt_open_orders_tuples:
+                strike, stplmt_open_orders_tuples = self.put_stplmt_open_orders_tuples.items()
                 for order_id, contract, order, order_state in stplmt_open_orders_tuples:
                     testapp.cancelOrder(order_id, current_time)
                     #remove the order from the list
                     self.put_stplmt_open_orders_tuples[strike].remove((order_id, contract, order, order_state))
+    def cancelpendingstplmtprofitorder(self, testapp : TestApp, strike, right):
+        #get current time in YYYYMMDD-HH:MM:SS format
+        current_time = datetime.datetime.now().strftime("%Y%m%d-%H:%M:%S")
+        if right == "C":
+            if strike in self.call_stplmt_profit_open_orders_tuples:
+                strike, stplmt_profit_open_orders_tuples = self.call_stplmt_profit_open_orders_tuples.items()
+                for order_id, contract, order, order_state in stplmt_profit_open_orders_tuples:
+                    testapp.cancelOrder(order_id,current_time)
+                    #remove the order from the list
+                    self.call_stplmt_profit_open_orders_tuples[strike].remove((order_id, contract, order, order_state))
+        else:
+            if strike in self.put_stplmt_profit_open_orders_tuples:
+                strike, stplmt_profit_open_orders_tuples = self.put_stplmt_profit_open_orders_tuples.items()
+                for order_id, contract, order, order_state in stplmt_profit_open_orders_tuples:
+                    testapp.cancelOrder(order_id, current_time)
+                    #remove the order from the list
+                    self.put_stplmt_profit_open_orders_tuples[strike].remove((order_id, contract, order, order_state))
 
     def sanity_check_and_maintenanace(self, testapp : TestApp, newESPrice):
-        return
+        #return
         #this function enforces the following rules:
         #1. every position should have a bracket order in place
         #2. every bracket order should have a corresponding position
@@ -2576,18 +2623,45 @@ class ESDynamicStraddleStrategy(Object):
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H:%M:%S")
         #1. check whether every short position has a bracket order in place
         for strike, position in self.short_call_option_positions.items():
-            strike_call_not_in_call_stplmt_open_orders_tuples = strike not in self.call_stplmt_open_orders_tuples
-            strike_call_order_quantity_not_equal_to_position = False
-            strike_call_bracket_order_quantity = 0
-            strike_call_position_quantity = position
+            strike_call_bracket_order_stplmt_quantity = 0
+            strike_call_bracket_order_profit_quantity = 0
+            if (strike in self.call_bracket_order_maintenance_on_hold_for_strike) and self.call_bracket_order_maintenance_on_hold_for_strike[strike] == True:
+                print("call bracket order maintenance on hold for strike:", strike)
+                self.log_file_handle.write("call bracket order maintenance on hold for strike:" + str(strike) + "\n")
+                continue
+            if (strike in self.call_bracket_profit_order_maintenance_on_hold_for_strike) and self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] == True:
+                print("call bracket profit order maintenance on hold for strike:", strike)
+                self.log_file_handle.write("call bracket profit order maintenance on hold for strike:" + str(strike) + "\n")
+                continue
 
             if strike in self.call_stplmt_open_orders_tuples:
-                for order_id, contract, order, order_state in self.call_stplmt_open_orders_tuples[strike]:
-                    strike_call_bracket_order_quantity = order.totalQuantity
-            
-            if -position > strike_call_bracket_order_quantity:
-                needed_quantity = -position - strike_call_bracket_order_quantity
+                if strike in self.call_stplmt_profit_open_orders_tuples:
+                    order_id, contract, order, order_state = self.call_stplmt_open_orders_tuples[strike]
+                    strike_call_bracket_order_stplmt_quantity = strike_call_bracket_order_stplmt_quantity  + order.totalQuantity
+            if strike in self.call_stplmt_profit_open_orders_tuples:
+                if strike in self.call_stplmt_profit_open_orders_tuples:
+                    order_id, contract, order, order_state = self.call_stplmt_profit_open_orders_tuples[strike]
+                    strike_call_bracket_order_profit_quantity = strike_call_bracket_order_profit_quantity + order.totalQuantity
+            if -position > strike_call_bracket_order_stplmt_quantity:
+                needed_quantity = -position - strike_call_bracket_order_stplmt_quantity
                 #create a bracket order for this position
+                position_price =  self.short_call_option_avgcost[strike]/self.es_contract_multiplier
+                call_profit_order_target_price = position_price/self.profit_target_divisor
+                if call_profit_order_target_price >= 10:
+                    call_profit_order_target_price = round(call_profit_order_target_price * 4) / 4
+                else:
+                    call_profit_order_target_price = round(call_profit_order_target_price * 20) / 20
+                call_stop_order_stop_price = position_price + self.stop_loss_increment
+                if call_stop_order_stop_price >= 10:
+                    call_stop_order_stop_price = round(call_stop_order_stop_price * 4) / 4
+                else:
+                    call_stop_order_stop_price = round(call_stop_order_stop_price * 20) / 20
+                call_stop_order_stop_limit_price = call_stop_order_stop_price + self.stop_limit_increment
+                if call_stop_order_stop_limit_price >= 10:
+                    call_stop_order_stop_limit_price = round(call_stop_order_stop_limit_price * 4) / 4
+                else:
+                    call_stop_order_stop_limit_price = round(call_stop_order_stop_limit_price * 20) / 20
+
                 call_contract = Contract()
                 call_contract.symbol = "ES"
                 call_contract.secType = "FOP"
@@ -2595,28 +2669,178 @@ class ESDynamicStraddleStrategy(Object):
                 call_contract.currency = "USD"
                 call_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
                 call_contract.right = "C"
-                call_contract.multiplier = "50"
+                call_contract.multiplier = str(self.es_contract_multiplier)
                 call_contract.strike = strike
-                call_order = Order()
-                call_order.action = "BUY"
-                call_order.orderType = "STP LMT"
-                call_order.totalQuantity = needed_quantity
-                position_price =  self.short_call_option_avgcost[strike]
-                short_put_option_to_open_profit_order_limit_price = position_price/4
-                if short_put_option_to_open_profit_order_limit_price >= 10:
-                    short_put_option_to_open_profit_order_limit_price = round(short_put_option_to_open_profit_order_limit_price * 4) / 4
+                call_profit_order = Order()
+                call_profit_order.action = "BUY"
+                call_profit_order.orderType = "LMT"
+                call_profit_order.totalQuantity = needed_quantity
+                call_profit_order.lmtPrice = call_profit_order_target_price
+                call_profit_order.transmit = self.transmit_orders
+                call_stop_order = Order()
+                call_stop_order.action = "BUY"
+                call_stop_order.orderType = "STP LMT"
+                call_stop_order.totalQuantity = needed_quantity
+                call_stop_order.auxPrice = call_stop_order_stop_price
+                call_stop_order.lmtPrice = call_stop_order_stop_limit_price
+                call_stop_order.transmit = self.transmit_orders
+
+                call_profit_order.account = self.place_orders_to_account
+                call_stop_order.account = self.place_orders_to_account
+                call_profit_order.outsideRth = True
+                call_stop_order.outsideRth = True
+                call_profit_order.triggerMethod = 1
+                call_stop_order.triggerMethod = 1
+                call_bracket_OCA_orders = [call_profit_order, call_stop_order]
+                OrderSamples.OneCancelsAll("AttachBracketCallOCO_"+str(testapp.nextValidOrderId), call_bracket_OCA_orders, 2)
+                for o in call_bracket_OCA_orders:
+                    o.account = self.place_orders_to_account
+                    testapp.placeOrder(testapp.nextValidOrderId, call_contract, o)
+                    testapp.nextValidOrderId += 1
+                
+                print("position:", position, "strike_call_bracket_order_stplmt_quantity:", strike_call_bracket_order_stplmt_quantity, "needed_quantity:", needed_quantity)
+                self.log_file_handle.write("position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
+                self.log_file_handle.write("Not enough bracket orders: attaching call order for strike:" + str(strike) + "limit_price:" + str(call_profit_order_target_price) + "call_contract:" + str(call_contract) + "profit_order:" + str(call_profit_order) + "loss_order:" + str(call_stop_order) + "\n")
+                time.sleep(self.intra_order_sleep_time_ms/1000)
+                self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+            elif -position < strike_call_bracket_order_stplmt_quantity:
+                needed_quantity = strike_call_bracket_order_stplmt_quantity + position
+                #cancel the extra bracket order
+                self.cancelpendingstplmtorder(testapp, strike, "C")
+                print("position:", position, "strike_call_bracket_order_stplmt_quantity:", strike_call_bracket_order_stplmt_quantity, "needed_quantity:", needed_quantity)
+                self.log_file_handle.write("position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
+                print("Too many bracket orders: cancelling call order for strike:", strike)
+                self.log_file_handle.write("Too many bracket orders: cancelling call order for strike:" + str(strike) + "\n")
+                time.sleep(self.intra_order_sleep_time_ms/1000)
+                self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+            elif -position == strike_call_bracket_order_stplmt_quantity:
+                #check that bracket order limit order and stop limit orders have same quantity
+                if strike_call_bracket_order_stplmt_quantity != strike_call_bracket_order_profit_quantity:
+                    #cancel the extra bracket order
+                    self.cancelpendingstplmtorder(testapp, strike, "C")
+                    self.cancelpendingstplmtprofitorder(testapp, strike, "C")
+                    print("position:", position, "strike_call_bracket_order_stplmt_quantity:", strike_call_bracket_order_stplmt_quantity, "strike_call_bracket_order_profit_quantity:", strike_call_bracket_order_profit_quantity)
+                    self.log_file_handle.write("position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "strike_call_bracket_order_profit_quantity:" + str(strike_call_bracket_order_profit_quantity) + "\n")
+                    print("Unequal bracket profit and stplmt legs: cancelling call profit and loss orders for strike:", strike)
+                    self.log_file_handle.write("Unequal bracket profit and stplmt legs: cancelling call profit and loss orders for strike:" + str(strike) + "\n")
+                    time.sleep(self.intra_order_sleep_time_ms/1000)
+                    self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                    self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+
+        #now do the same for put positions
+        for strike, position in self.short_put_option_positions.items():
+            strike_put_bracket_order_stplmt_quantity = 0
+            strike_put_bracket_order_profit_quantity = 0
+            if (strike in self.put_bracket_order_maintenance_on_hold_for_strike) and self.put_bracket_order_maintenance_on_hold_for_strike[strike] == True:
+                print("put bracket order maintenance on hold for strike:", strike)
+                self.log_file_handle.write("put bracket order maintenance on hold for strike:" + str(strike) + "\n")
+                continue
+            if (strike in self.put_bracket_profit_order_maintenance_on_hold_for_strike) and self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] == True:
+                print("put bracket profit order maintenance on hold for strike:", strike)
+                self.log_file_handle.write("put bracket profit order maintenance on hold for strike:" + str(strike) + "\n")
+                continue
+
+            if strike in self.put_stplmt_open_orders_tuples:
+                if strike in self.put_stplmt_open_orders_tuples:
+                    order_id, contract, order, order_state = self.put_stplmt_open_orders_tuples[strike]
+                strike_put_bracket_order_stplmt_quantity = strike_put_bracket_order_stplmt_quantity  + order.totalQuantity
+            if strike in self.put_stplmt_profit_open_orders_tuples:
+                if strike in self.put_stplmt_profit_open_orders_tuples:
+                    order_id, contract, order, order_state in self.put_stplmt_profit_open_orders_tuples[strike]
+                    strike_put_bracket_order_profit_quantity = strike_put_bracket_order_profit_quantity + order.totalQuantity
+
+            if -position > strike_put_bracket_order_stplmt_quantity:
+                needed_quantity = -position - strike_put_bracket_order_stplmt_quantity
+                #create a bracket order for this position
+                position_price =  self.short_put_option_avgcost[strike]/self.es_contract_multiplier
+                put_profit_order_target_price = position_price/self.profit_target_divisor
+                if put_profit_order_target_price >= 10:
+                    put_profit_order_target_price = round(put_profit_order_target_price * 4) / 4
                 else:
-                    short_put_option_to_open_profit_order_limit_price = round(short_put_option_to_open_profit_order_limit_price * 20) / 20
-                short_put_option_to_open_profit_order_stop_price = position_price + 5
-                if short_put_option_to_open_profit_order_stop_price >= 10:
-                    short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 4) / 4
+                    put_profit_order_target_price = round(put_profit_order_target_price * 20) / 20
+                put_stop_order_stop_price = position_price + self.stop_loss_increment
+                if put_stop_order_stop_price >= 10:
+                    put_stop_order_stop_price = round(put_stop_order_stop_price * 4) / 4
                 else:
-                    short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 20) / 20
-                short_put_option_to_open_profit_order_stop_limit_price = short_put_option_to_open_profit_order_stop_price + 10
-                if short_put_option_to_open_profit_order_stop_limit_price >= 10:
-                    short_put_option_to_open_profit_order_stop_limit_price = round(short_put_option_to_open_profit_order_stop_limit_price * 4) / 4
+                    put_stop_order_stop_price = round(put_stop_order_stop_price * 20) / 20
+                put_stop_order_stop_limit_price = put_stop_order_stop_price + self.stop_limit_increment
+                if put_stop_order_stop_limit_price >= 10:
+                    put_stop_order_stop_limit_price = round(put_stop_order_stop_limit_price * 4) / 4
                 else:
-                    short_put_option_to_open_profit_order_stop_limit_price = round(short_put_option_to_open_profit_order_stop_limit_price * 20) / 20
+                    put_stop_order_stop_limit_price = round(put_stop_order_stop_limit_price * 20) / 20
+
+                put_contract = Contract()
+                put_contract.symbol = "ES"
+                put_contract.secType = "FOP"
+                put_contract.exchange = "CME"
+                put_contract.currency = "USD"
+                put_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
+                put_contract.right = "P"
+                put_contract.multiplier = str(self.es_contract_multiplier)
+                put_contract.strike = strike
+                put_profit_order = Order()
+                put_profit_order.action = "BUY"
+                put_profit_order.orderType = "LMT"
+                put_profit_order.totalQuantity = needed_quantity
+                put_profit_order.lmtPrice = put_profit_order_target_price
+                put_profit_order.transmit = self.transmit_orders
+                put_stop_order = Order()
+                put_stop_order.action = "BUY"
+                put_stop_order.orderType = "STP LMT"
+                put_stop_order.totalQuantity = needed_quantity
+                put_stop_order.auxPrice = put_stop_order_stop_price
+                put_stop_order.lmtPrice = put_stop_order_stop_limit_price
+                put_stop_order.transmit = self.transmit_orders
+
+                put_profit_order.account = self.place_orders_to_account
+                put_stop_order.account = self.place_orders_to_account
+                put_profit_order.outsideRth = True
+                put_stop_order.outsideRth = True
+                put_profit_order.triggerMethod = 1
+                put_stop_order.triggerMethod = 1
+                put_bracket_OCA_orders = [put_profit_order, put_stop_order]
+                OrderSamples.OneCancelsAll("AttachBracketPutOCO_"+str(testapp.nextValidOrderId), put_bracket_OCA_orders, 2)
+                for o in put_bracket_OCA_orders:
+                    o.account = self.place_orders_to_account
+                    testapp.placeOrder(testapp.nextValidOrderId, put_contract, o)
+                    testapp.nextValidOrderId += 1
+                
+                print("position:", position, "strike_put_bracket_order_stplmt_quantity:", strike_put_bracket_order_stplmt_quantity, "needed_quantity:", needed_quantity)
+                self.log_file_handle.write("position:" + str(position) + "strike_put_bracket_order_stplmt_quantity:" + str(strike_put_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
+                print("Not enough bracket orders: attaching put order for strike:", strike, "limit_price:", put_profit_order_target_price, "put_contract:", put_contract, "profit_order:", put_profit_order, "loss_order:", put_stop_order)
+                self.log_file_handle.write("Not enough bracket orders: attaching put order for strike:" + str(strike) + "limit_price:" + str(put_profit_order_target_price) + "put_contract:" + str(put_contract) + "profit_order:" + str(put_profit_order) + "loss_order:" + str(put_stop_order) + "\n")
+                time.sleep(self.intra_order_sleep_time_ms/1000)
+                self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+            elif -position < strike_put_bracket_order_stplmt_quantity:
+                needed_quantity = strike_put_bracket_order_stplmt_quantity + position
+                #cancel the extra bracket order
+                self.cancelpendingstplmtorder(testapp, strike, "P")
+                print("position:", position, "strike_put_bracket_order_stplmt_quantity:", strike_put_bracket_order_stplmt_quantity, "needed_quantity:", needed_quantity)
+                self.log_file_handle.write("position:" + str(position) + "strike_put_bracket_order_stplmt_quantity:" + str(strike_put_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
+                print("Too many bracket orders: cancelling put order for strike:", strike)
+                self.log_file_handle.write("Too many bracket orders: cancelling put order for strike:" + str(strike) + "\n")
+                time.sleep(self.intra_order_sleep_time_ms/1000)
+                self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+            elif -position == strike_put_bracket_order_stplmt_quantity:
+                #check that bracket order limit order and stop limit orders have same quantity
+                if strike_put_bracket_order_stplmt_quantity != strike_put_bracket_order_profit_quantity:
+                    #cancel the extra bracket order
+                    self.cancelpendingstplmtorder(testapp, strike, "P")
+                    self.cancelpendingstplmtprofitorder(testapp, strike, "P")
+                    print("position:", position, "strike_put_bracket_order_stplmt_quantity:", strike_put_bracket_order_stplmt_quantity, "strike_put_bracket_order_profit_quantity:", strike_put_bracket_order_profit_quantity)
+                    self.log_file_handle.write("position:" + str(position) + "strike_put_bracket_order_stplmt_quantity:" + str(strike_put_bracket_order_stplmt_quantity) + "strike_put_bracket_order_profit_quantity:" + str(strike_put_bracket_order_profit_quantity) + "\n")
+                    print("Unequal bracket profit and stplmt legs: cancelling put profit and loss orders for strike:", strike)
+                    self.log_file_handle.write("Unequal bracket profit and stplmt legs: cancelling put profit and loss orders for strike:" + str(strike) + "\n")
+                    time.sleep(self.intra_order_sleep_time_ms/1000)
+                    self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                    self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+        #sleep for 1 second
+        time.sleep(1)
+       
 
     def updateESPrice(self, newESPrice, testapp : TestApp):
         
@@ -2641,7 +2865,7 @@ class ESDynamicStraddleStrategy(Object):
                 call_contract.currency = "USD"
                 call_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
                 call_contract.right = "C"
-                call_contract.multiplier = "50"
+                call_contract.multiplier = self.es_contract_multiplier
                 call_contract.strike = strike
                 reqId = testapp.nextOrderId()
                 testapp.reqMktData(reqId, call_contract, "", False, False, [])
@@ -2656,7 +2880,7 @@ class ESDynamicStraddleStrategy(Object):
                 put_contract.currency = "USD"
                 put_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
                 put_contract.right = "P"
-                put_contract.multiplier = "50"
+                put_contract.multiplier = self.es_contract_multiplier
                 put_contract.strike = strike
                 reqId = testapp.nextOrderId()
                 testapp.reqMktData(reqId, put_contract, "", False, False, [])
@@ -2711,7 +2935,7 @@ class ESDynamicStraddleStrategy(Object):
                             short_call_option_contract_to_close.lastTradeDateOrContractMonth = self.OptionTradeDate
                             short_call_option_contract_to_close.strike = strike
                             short_call_option_contract_to_close.right = "C"
-                            short_call_option_contract_to_close.multiplier = "50"
+                            short_call_option_contract_to_close.multiplier = self.es_contract_multiplier
                             print("closing short call position for strike:", strike, "short_call_option_contract_to_close:", short_call_option_contract_to_close)
                             self.log_file_handle.write("closing short call position for strike:" + str(strike) + "short_call_option_contract_to_close:" + str(short_call_option_contract_to_close) + "\n")
                             #create closing order by creating a chain of OCO order with conservative to aggressive limit prices with same OCO group id,
@@ -2767,7 +2991,7 @@ class ESDynamicStraddleStrategy(Object):
                             short_put_option_contract_to_close.lastTradeDateOrContractMonth = self.OptionTradeDate
                             short_put_option_contract_to_close.strike = strike
                             short_put_option_contract_to_close.right = "P"
-                            short_put_option_contract_to_close.multiplier = "50"
+                            short_put_option_contract_to_close.multiplier = self.es_contract_multiplier
                             print("closing short put position for strike:", strike, "short_put_option_contract_to_close:", short_put_option_contract_to_close)
                             self.log_file_handle.write("closing short put position for strike:" + str(strike) + "short_put_option_contract_to_close:" + str(short_put_option_contract_to_close) + "\n")
                             #create closing order by creating a chain of OCO order with conservative to aggressive limit prices with same OCO group id,
@@ -2818,8 +3042,9 @@ class ESDynamicStraddleStrategy(Object):
                     total_long_call_positions += position
                 for strike, position in self.short_call_option_positions.items():
                     total_short_call_positions += -position
-                if total_long_call_positions - total_short_call_positions > 5:
+                if (total_long_call_positions == 0 and total_short_call_positions == 0) or (total_long_call_positions - total_short_call_positions > 5):
                     up_call_buy_order_needed = False
+                
                 print("total_long_call_positions:", total_long_call_positions, "total_short_call_positions:", total_short_call_positions, "up_call_buy_order_needed:", up_call_buy_order_needed)
                 self.log_file_handle.write("total_long_call_positions:" + str(total_long_call_positions) + "total_short_call_positions:" + str(total_short_call_positions) + "up_call_buy_order_needed:" + str(up_call_buy_order_needed) + "\n")
 
@@ -2846,7 +3071,7 @@ class ESDynamicStraddleStrategy(Object):
                         up_call_buy_option_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
                         up_call_buy_option_contract.strike = _strike
                         up_call_buy_option_contract.right = "C"
-                        up_call_buy_option_contract.multiplier = "50"
+                        up_call_buy_option_contract.multiplier = self.es_contract_multiplier
                         
                         print("placing call buy order for strike:", _strike, "up_call_buy_option_contract:", up_call_buy_option_contract)
                         self.log_file_handle.write("placing call buy order for strike:" + str(_strike) + "up_call_buy_option_contract:" + str(up_call_buy_option_contract) + "\n")
@@ -2864,7 +3089,7 @@ class ESDynamicStraddleStrategy(Object):
                     total_long_put_positions += position
                 for strike, position in self.short_put_option_positions.items():
                     total_short_put_positions += -position
-                if total_long_put_positions - total_short_put_positions > 5:
+                if (total_long_put_positions == 0 and total_short_put_positions == 0) or (total_long_put_positions - total_short_put_positions > 5):
                     up_put_buy_order_needed = False
                 print("total_long_put_positions:", total_long_put_positions, "total_short_put_positions:", total_short_put_positions, "up_put_buy_order_needed:", up_put_buy_order_needed)
                 self.log_file_handle.write("total_long_put_positions:" + str(total_long_put_positions) + "total_short_put_positions:" + str(total_short_put_positions) + "up_put_buy_order_needed:" + str(up_put_buy_order_needed) + "\n")
@@ -2892,7 +3117,7 @@ class ESDynamicStraddleStrategy(Object):
                         up_put_buy_option_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
                         up_put_buy_option_contract.strike = _strike
                         up_put_buy_option_contract.right = "P"
-                        up_put_buy_option_contract.multiplier = "50"
+                        up_put_buy_option_contract.multiplier = self.es_contract_multiplier
                         
                         print("placing put buy order for strike:", _strike, "up_put_buy_option_contract:", up_put_buy_option_contract)
                         self.log_file_handle.write("placing put buy order for strike:" + str(_strike) + "up_put_buy_option_contract:" + str(up_put_buy_option_contract) + "\n")
@@ -2913,7 +3138,7 @@ class ESDynamicStraddleStrategy(Object):
                     short_call_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
                     short_call_option_contract_to_open.strike = straddle_strike
                     short_call_option_contract_to_open.right = "C"
-                    short_call_option_contract_to_open.multiplier = "50"
+                    short_call_option_contract_to_open.multiplier = self.es_contract_multiplier
                     print("placing call order for strike:", straddle_strike, "short_call_option_contract_to_open:", short_call_option_contract_to_open)
                     self.log_file_handle.write("placing call order for strike:" + str(straddle_strike) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "\n")
 
@@ -2929,7 +3154,7 @@ class ESDynamicStraddleStrategy(Object):
                     short_put_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
                     short_put_option_contract_to_open.strike = straddle_strike
                     short_put_option_contract_to_open.right = "P"
-                    short_put_option_contract_to_open.multiplier = "50"
+                    short_put_option_contract_to_open.multiplier = self.es_contract_multiplier
                     print("placing put order for strike:", straddle_strike, "short_put_option_contract_to_open:", short_put_option_contract_to_open)
                     self.log_file_handle.write("placing put order for strike:" + str(straddle_strike) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "\n")
 
@@ -2957,7 +3182,7 @@ class ESDynamicStraddleStrategy(Object):
                             short_call_option_contract_to_close.lastTradeDateOrContractMonth = self.OptionTradeDate
                             short_call_option_contract_to_close.strike = strike
                             short_call_option_contract_to_close.right = "C"
-                            short_call_option_contract_to_close.multiplier = "50"
+                            short_call_option_contract_to_close.multiplier = self.es_contract_multiplier
                             print("closing short call position for strike:", strike, "short_call_option_contract_to_close:", short_call_option_contract_to_close)
                             self.log_file_handle.write("closing short call position for strike:" + str(strike) + "short_call_option_contract_to_close:" + str(short_call_option_contract_to_close) + "\n")
                             #create closing order by creating a chain of OCO order with conservative to aggressive limit prices with same OCO group id,
@@ -3013,7 +3238,7 @@ class ESDynamicStraddleStrategy(Object):
                             short_put_option_contract_to_close.lastTradeDateOrContractMonth = self.OptionTradeDate
                             short_put_option_contract_to_close.strike = strike
                             short_put_option_contract_to_close.right = "P"
-                            short_put_option_contract_to_close.multiplier = "50"
+                            short_put_option_contract_to_close.multiplier = self.es_contract_multiplier
                             print("closing short put position for strike:", strike, "short_put_option_contract_to_close:", short_put_option_contract_to_close)
                             self.log_file_handle.write("closing short put position for strike:" + str(strike) + "short_put_option_contract_to_close:" + str(short_put_option_contract_to_close) + "\n")
                             #create closing order by creating a chain of OCO order with conservative to aggressive limit prices with same OCO group id,
@@ -3064,7 +3289,7 @@ class ESDynamicStraddleStrategy(Object):
                     total_long_call_positions += position
                 for strike, position in self.short_call_option_positions.items():
                     total_short_call_positions += -position
-                if total_long_call_positions - total_short_call_positions > 5:
+                if (total_long_call_positions == 0 and total_short_call_positions == 0) or (total_long_call_positions - total_short_call_positions > 5):
                     down_call_buy_order_needed = False
                 print("total_long_call_positions:", total_long_call_positions, "total_short_call_positions:", total_short_call_positions, "down_call_buy_order_needed:", down_call_buy_order_needed)
                 self.log_file_handle.write("total_long_call_positions:" + str(total_long_call_positions) + "total_short_call_positions:" + str(total_short_call_positions) + "down_call_buy_order_needed:" + str(down_call_buy_order_needed) + "\n")
@@ -3092,7 +3317,7 @@ class ESDynamicStraddleStrategy(Object):
                         down_call_buy_option_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
                         down_call_buy_option_contract.strike = _strike
                         down_call_buy_option_contract.right = "C"
-                        down_call_buy_option_contract.multiplier = "50"
+                        down_call_buy_option_contract.multiplier = self.es_contract_multiplier
                         
                         print("placing call buy order for strike:", _strike, "down_call_buy_option_contract:", down_call_buy_option_contract)
                         self.log_file_handle.write("placing call buy order for strike:" + str(_strike) + "down_call_buy_option_contract:" + str(down_call_buy_option_contract) + "\n")
@@ -3112,7 +3337,7 @@ class ESDynamicStraddleStrategy(Object):
                     total_long_put_positions += position
                 for strike, position in self.short_put_option_positions.items():
                     total_short_put_positions += -position
-                if total_long_put_positions - total_short_put_positions > 5:
+                if (total_long_put_positions == 0 and total_short_put_positions == 0) or (total_long_put_positions - total_short_put_positions > 5):
                     down_put_buy_order_needed = False
                 print("total_long_put_positions:", total_long_put_positions, "total_short_put_positions:", total_short_put_positions, "down_put_buy_order_needed:", down_put_buy_order_needed)
                 self.log_file_handle.write("total_long_put_positions:" + str(total_long_put_positions) + "total_short_put_positions:" + str(total_short_put_positions) + "down_put_buy_order_needed:" + str(down_put_buy_order_needed) + "\n")
@@ -3140,7 +3365,7 @@ class ESDynamicStraddleStrategy(Object):
                         down_put_buy_option_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
                         down_put_buy_option_contract.strike = _strike
                         down_put_buy_option_contract.right = "P"
-                        down_put_buy_option_contract.multiplier = "50"
+                        down_put_buy_option_contract.multiplier =  self.es_contract_multiplier
                         
                         print("placing put buy order for strike:", _strike, "down_put_buy_option_contract:", down_put_buy_option_contract)
                         self.log_file_handle.write("placing put buy order for strike:" + str(_strike) + "down_put_buy_option_contract:" + str(down_put_buy_option_contract) + "\n")
@@ -3162,7 +3387,7 @@ class ESDynamicStraddleStrategy(Object):
                     short_call_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
                     short_call_option_contract_to_open.strike = straddle_strike
                     short_call_option_contract_to_open.right = "C"
-                    short_call_option_contract_to_open.multiplier = "50"
+                    short_call_option_contract_to_open.multiplier = self.es_contract_multiplier
                     print("placing call order for strike:", straddle_strike, "short_call_option_contract_to_open:", short_call_option_contract_to_open)
                     self.log_file_handle.write("placing call order for strike:" + str(straddle_strike) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "\n")                    
                     self.place_short_call_option_to_open_orders(testapp, straddle_strike, short_call_option_contract_to_open)
@@ -3177,7 +3402,7 @@ class ESDynamicStraddleStrategy(Object):
                     short_put_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
                     short_put_option_contract_to_open.strike = straddle_strike
                     short_put_option_contract_to_open.right = "P"
-                    short_put_option_contract_to_open.multiplier = "50"
+                    short_put_option_contract_to_open.multiplier = self.es_contract_multiplier
                     print("placing put order for strike:", straddle_strike, "short_put_option_contract_to_open:", short_put_option_contract_to_open)
                     self.log_file_handle.write("placing put order for strike:" + str(straddle_strike) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "\n")
                     self.place_short_put_option_to_open_orders(testapp, straddle_strike, short_put_option_contract_to_open)
@@ -3190,6 +3415,7 @@ class ESDynamicStraddleStrategy(Object):
                 self.priceDirection = 0
                 current_time = datetime.datetime.now()
                 self.log_file_handle.write("ES price update: " + str(self.currentESPrice) + " direction: no change " + " current_time: " + str(current_time) + "\n")
+        self.sanity_check_and_maintenanace(testapp, newESPrice)
 
     def place_short_put_option_to_open_orders(self, testapp, straddle_strike, short_put_option_contract_to_open):
         short_put_option_OCA_order_to_open_tuples = []
@@ -3423,9 +3649,9 @@ def main():
             if app.nextValidOrderId:
                 app.nextValidOrderId += 1
         finally:
-            app.dumpTestCoverageSituation()
-            app.dumpReqAnsErrSituation()
-    app.disconnect()
+            #app.dumpTestCoverageSituation()
+            #app.dumpReqAnsErrSituation()
+            app.disconnect()
 
 
 if __name__ == "__main__":
