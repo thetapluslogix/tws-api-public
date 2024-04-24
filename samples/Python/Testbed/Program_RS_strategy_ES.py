@@ -2484,6 +2484,14 @@ class ESDynamicStraddleStrategy(Object):
         self.orders_can_start_trading = False
         self.rs_hedge_divisor = 15
         self.state_seq_id = 0 #increment upon entering a up or down direction state. All orders of same category (e.g. short call at straddle strike) will use this seq id as part of its OCO tag so that if order is placed multiple times while in current state (due to glitches), only one will execute
+        #read state_seq_id from file
+        try:
+            state_seq_id_file_name = "state_seq_id_" + self.OptionTradeDate + ".txt"
+            with open(state_seq_id_file_name, "r") as f:
+                self.state_seq_id = int(f.read())
+                self.log_file_handle.write("state_seq_id read from file as:" + str(self.state_seq_id) + "\n")
+        except:
+            self.log_file_handle.write("state_seq_id file not found. Using default value of 0\n")
         self.quote_time_lag_limit = 10 #in seconds
         self.hedge_position_allowance = 2 #number of extra allowed hedge buys
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
@@ -4085,6 +4093,16 @@ def main():
             current_time = datetime.datetime.now()
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                 app.ESDynamicStraddleStrategy.log_file_handle.write("Keyboard interrupt at time:" + str(current_time) + "\n")
+            #write state_seq_id file
+            try:
+                state_seq_id_file_name = "state_seq_id_" + app.ESDynamicStraddleStrategy.OptionTradeDate + ".txt"
+                with open(state_seq_id_file_name, "w") as f:
+                    f.write(str(app.ESDynamicStraddleStrategy.state_seq_id))
+                if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                    app.ESDynamicStraddleStrategy.log_file_handle.write("Writing state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
+            except:
+                if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                    app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
             alive = False
         except Exception as e:
             print("Exception:", e)
@@ -4097,6 +4115,15 @@ def main():
             current_time = datetime.datetime.now()
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                 app.ESDynamicStraddleStrategy.log_file_handle.write("disconnecting at time:" + str(current_time) + "\n")
+            try:
+                state_seq_id_file_name = "state_seq_id_" + app.ESDynamicStraddleStrategy.OptionTradeDate + ".txt"
+                with open(state_seq_id_file_name, "w") as f:
+                    f.write(str(app.ESDynamicStraddleStrategy.state_seq_id))
+                if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                    app.ESDynamicStraddleStrategy.log_file_handle.write("Writing state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
+            except:
+                if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                    app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
             #app.dumpTestCoverageSituation()
             #app.dumpReqAnsErrSituation()
             app.disconnect()
