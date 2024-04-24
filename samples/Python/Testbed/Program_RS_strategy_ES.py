@@ -3128,9 +3128,14 @@ class ESDynamicStraddleStrategy(Object):
 
                 #first, close all short call positions with strike price less than lastESPrice_ that are outside straddle range
                 straddle_range = straddle_call_price + straddle_put_price
-                self.stop_loss_increment = math.ceil(straddle_range)
-                print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
-                self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                if straddle_range > 0 and quotes_available:
+                    self.stop_loss_increment = math.ceil(straddle_range)
+                    print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
+                    self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                else:
+                    print("straddle_range is zero or quotes are not available, not setting stop loss increment", "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
+                    self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                
                 if straddle_range > 0 and quotes_available:
                     for strike, position in self.short_call_option_positions.items():
                         if strike < lastESPrice_ - straddle_range:
@@ -3415,9 +3420,15 @@ class ESDynamicStraddleStrategy(Object):
                 #first, close all short call positions with strike price less than lastESPrice_ outside straddle range
                 current_time = datetime.now().time()
                 straddle_range = straddle_call_price + straddle_put_price
-                self.stop_loss_increment = math.ceil(straddle_range)
-                print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
-                self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                
+                if straddle_range > 0 and quotes_available:
+                    self.stop_loss_increment = math.ceil(straddle_range)
+                    print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
+                    self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                else:
+                    print("straddle_range is zero or quotes are not available, not setting stop loss increment", "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
+                    self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                    
                 if straddle_range > 0 and quotes_available:
                     for strike, position in self.short_call_option_positions.items():
                         if strike < lastESPrice_ - straddle_range:
