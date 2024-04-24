@@ -2459,7 +2459,7 @@ class ESDynamicStraddleStrategy(Object):
         self.log_file_handle.write("ESDynamicStraddleStrategy RS started at " + str(datetime.datetime.now()) + "\n")
         self.limit_price_slack_ticks = 8
         self.hedge_outer_offset = 300
-        self.intra_order_sleep_time_ms = 300
+        self.intra_order_sleep_time_ms = 500
         self.attach_bracket_order = True
         self.call_stplmt_profit_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
         self.put_stplmt_profit_open_orders_tuples = {} #key is strike, value is (order_id, contract, order, order_state)
@@ -2484,7 +2484,8 @@ class ESDynamicStraddleStrategy(Object):
         self.orders_can_start_trading = False
         self.rs_hedge_divisor = 15
         self.state_seq_id = 0 #increment upon entering a up or down direction state. All orders of same category (e.g. short call at straddle strike) will use this seq id as part of its OCO tag so that if order is placed multiple times while in current state (due to glitches), only one will execute
-        self.quote_time_lag_limit = 60 #in seconds
+        self.quote_time_lag_limit = 10 #in seconds
+        self.hedge_position_allowance = 2 #number of extra allowed hedge buys
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
         assert reqContract.symbol == "ES" and reqContract.secType == "FOP" and reqContract.lastTradeDateOrContractMonth == self.OptionTradeDate
         #get current time as unique timestamp
@@ -3082,10 +3083,10 @@ class ESDynamicStraddleStrategy(Object):
                 short_put_option_contract_to_open = Contract()
                     
                 #place a straddle order by individually placing a call and put order OCO groups with the same strike price as current strike price
-                quotes_available = self.ES_FOP_quote_bid_call.get(lastESPrice_, None) is not None and self.ES_FOP_quote_bid_call_time[lastESPrice_] > current_time - self.quote_time_lag_limit \
-                                    and self.ES_FOP_quote_ask_call.get(lastESPrice_, None) is not None and self.ES_FOP_quote_ask_call_time[lastESPrice_] > current_time - self.quote_time_lag_limit \
-                                    and self.ES_FOP_quote_bid_put.get(lastESPrice_, None) is not None and self.ES_FOP_quote_bid_put_time[lastESPrice_] > current_time - self.quote_time_lag_limit \
-                                    and self.ES_FOP_quote_ask_put.get(lastESPrice_, None) is not None and self.ES_FOP_quote_ask_put_time[lastESPrice_] > current_time - self.quote_time_lag_limit
+                quotes_available = self.ES_FOP_quote_bid_call.get(lastESPrice_, None) is not None and self.ES_FOP_quote_bid_call_time[lastESPrice_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
+                                    and self.ES_FOP_quote_ask_call.get(lastESPrice_, None) is not None and self.ES_FOP_quote_ask_call_time[lastESPrice_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
+                                    and self.ES_FOP_quote_bid_put.get(lastESPrice_, None) is not None and self.ES_FOP_quote_bid_put_time[lastESPrice_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
+                                    and self.ES_FOP_quote_ask_put.get(lastESPrice_, None) is not None and self.ES_FOP_quote_ask_put_time[lastESPrice_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit)
                 if self.short_call_option_positions.get(lastESPrice_, 0) == 0 and quotes_available:
                     straddle_strike = lastESPrice_
                     short_call_option_contract_to_open.symbol = "ES"
@@ -3256,7 +3257,7 @@ class ESDynamicStraddleStrategy(Object):
                         total_long_call_positions += position
                     for strike, position in self.short_call_option_positions.items():
                         total_short_call_positions += -position
-                    if (total_long_call_positions == 0 and total_short_call_positions == 0) or (total_long_call_positions - total_short_call_positions > 5):
+                    if (total_long_call_positions == 0 and total_short_call_positions == 0) or (total_long_call_positions - total_short_call_positions > self.hedge_position_allowance):
                         up_call_buy_order_needed = False
 
                     print("total_long_call_positions:", total_long_call_positions, "total_short_call_positions:", total_short_call_positions, "up_call_buy_order_needed:", up_call_buy_order_needed, "state_seq_id:", self.state_seq_id)
@@ -3373,10 +3374,10 @@ class ESDynamicStraddleStrategy(Object):
                 short_call_option_contract_to_open = Contract()
                 short_put_option_contract_to_open = Contract()                  
                     
-                quotes_available = self.ES_FOP_quote_bid_call.get(lastESPrice_, None) is not None and self.ES_FOP_quote_bid_call_time[lastESPrice_] > current_time - self.quote_time_lag_limit \
-                and self.ES_FOP_quote_ask_call.get(lastESPrice_, None) is not None and self.ES_FOP_quote_ask_call_time[lastESPrice_] > current_time - self.quote_time_lag_limit \
-                and self.ES_FOP_quote_bid_put.get(lastESPrice_, None) is not None and self.ES_FOP_quote_bid_put_time[lastESPrice_] > current_time - self.quote_time_lag_limit \
-                and self.ES_FOP_quote_ask_put.get(lastESPrice_, None) is not None and self.ES_FOP_quote_ask_put_time[lastESPrice_] > current_time - self.quote_time_lag_limit
+                quotes_available = self.ES_FOP_quote_bid_call.get(lastESPrice_, None) is not None and self.ES_FOP_quote_bid_call_time[lastESPrice_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
+                and self.ES_FOP_quote_ask_call.get(lastESPrice_, None) is not None and self.ES_FOP_quote_ask_call_time[lastESPrice_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
+                and self.ES_FOP_quote_bid_put.get(lastESPrice_, None) is not None and self.ES_FOP_quote_bid_put_time[lastESPrice_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
+                and self.ES_FOP_quote_ask_put.get(lastESPrice_, None) is not None and self.ES_FOP_quote_ask_put_time[lastESPrice_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit)
                 
                 #place a straddle order by individually placing a call and put order OCO groups with the same strike price as current strike price
                 if self.short_call_option_positions.get(lastESPrice_, 0) == 0 and quotes_available:
@@ -3428,7 +3429,7 @@ class ESDynamicStraddleStrategy(Object):
                 else:
                     print("straddle_range is zero or quotes are not available, not setting stop loss increment", "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
                     self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
-                    
+
                 if straddle_range > 0 and quotes_available:
                     for strike, position in self.short_call_option_positions.items():
                         if strike < lastESPrice_ - straddle_range:
@@ -3548,7 +3549,7 @@ class ESDynamicStraddleStrategy(Object):
                         total_long_call_positions += position
                     for strike, position in self.short_call_option_positions.items():
                         total_short_call_positions += -position
-                    if (total_long_call_positions == 0 and total_short_call_positions == 0) or (total_long_call_positions - total_short_call_positions > 5):
+                    if (total_long_call_positions == 0 and total_short_call_positions == 0) or (total_long_call_positions - total_short_call_positions > self.hedge_position_allowance):
                         down_call_buy_order_needed = False
                     print("total_long_call_positions:", total_long_call_positions, "total_short_call_positions:", total_short_call_positions, "down_call_buy_order_needed:", down_call_buy_order_needed, "state_seq_id:", self.state_seq_id)
                     self.log_file_handle.write("total_long_call_positions:" + str(total_long_call_positions) + "total_short_call_positions:" + str(total_short_call_positions) + "down_call_buy_order_needed:" + str(down_call_buy_order_needed) + "state_seq_id:" + str(self.state_seq_id) + "\n")
@@ -3986,7 +3987,7 @@ class ESDynamicStraddleStrategy(Object):
                     testapp.nextValidOrderId += 1
                     testapp.placeOrder(testapp.nextValidOrderId, short_put_option_contract_to_open, short_put_option_to_open_loss_order)
                     testapp.nextValidOrderId += 1
-                self.log_file_handle.write("state_seq_id:" + self.state_seq_id + "placing short straddle put order for strike:" + str(straddle_strike) + "limit_price:" + str(_price) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "profit_order:" + str(short_put_option_to_open_profit_order) + "loss_order:" + str(short_put_option_to_open_loss_order) + " time:" + str(current_time) + "\n")
+                self.log_file_handle.write("state_seq_id:" + str(self.state_seq_id) + "placing short straddle put order for strike:" + str(straddle_strike) + "limit_price:" + str(_price) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "profit_order:" + str(short_put_option_to_open_profit_order) + "loss_order:" + str(short_put_option_to_open_loss_order) + " time:" + str(current_time) + "\n")
                 #time.sleep(self.intra_order_sleep_time_ms/1000)
             else:
                 o.account = self.place_orders_to_account
@@ -4009,7 +4010,7 @@ class ESDynamicStraddleStrategy(Object):
                     testapp.nextValidOrderId += 1
                     testapp.placeOrder(testapp.nextValidOrderId, short_call_option_contract_to_open, short_call_option_to_open_loss_order)
                     testapp.nextValidOrderId += 1
-                self.log_file_handle.write("state_seq_id:" + self.state_seq_id + "placing short straddle call order for strike:" + str(straddle_strike) + "limit_price:" + str(_price) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "profit_order:" + str(short_call_option_to_open_profit_order) + "loss_order:" + str(short_call_option_to_open_loss_order) + " time:" + str(current_time) + "\n")
+                self.log_file_handle.write("state_seq_id:" + str(self.state_seq_id) + "placing short straddle call order for strike:" + str(straddle_strike) + "limit_price:" + str(_price) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "profit_order:" + str(short_call_option_to_open_profit_order) + "loss_order:" + str(short_call_option_to_open_loss_order) + " time:" + str(current_time) + "\n")
             time.sleep(self.intra_order_sleep_time_ms/1000)
 
 def main():
@@ -4063,6 +4064,9 @@ def main():
             # ! [connect]
             print("serverVersion:%s connectionTime:%s" % (app.serverVersion(),
                                                         app.twsConnectionTime()))
+            if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                app.ESDynamicStraddleStrategy.log_file_handle.write("serverVersion:" + str(app.serverVersion()) + " connectionTime:" + str(app.twsConnectionTime()) + "\n")
+
 
             # ! [clientrun]
             app.run()
@@ -4070,12 +4074,21 @@ def main():
         #handle keyboard interrupt
         except KeyboardInterrupt:
             print("Keyboard interrupt")
+            current_time = datetime.datetime.now()
+            if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                app.ESDynamicStraddleStrategy.log_file_handle.write("Keyboard interrupt at time:" + str(current_time) + "\n")
             alive = False
         except Exception as e:
             print("Exception:", e)
+            current_time = datetime.datetime.now()
+            if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                app.ESDynamicStraddleStrategy.log_file_handle.write("Exception:" + str(e) + " at time:" + str(current_time) + "\n")
             if app.nextValidOrderId:
                 app.nextValidOrderId += 1
         finally:
+            current_time = datetime.datetime.now()
+            if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                app.ESDynamicStraddleStrategy.log_file_handle.write("disconnecting at time:" + str(current_time) + "\n")
             #app.dumpTestCoverageSituation()
             #app.dumpReqAnsErrSituation()
             app.disconnect()
