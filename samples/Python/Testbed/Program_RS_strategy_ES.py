@@ -3363,6 +3363,7 @@ class ESDynamicStraddleStrategy(Object):
                     self.log_file_handle.write("not setting new lastESPrice, quotes are not available or straddle range is zero" + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "quotes_available:" + str(quotes_available) + "straddle_call_price:" + str(straddle_call_price) + "straddle_put_price:" + str(straddle_put_price) + "straddle_range:" + str(straddle_range) + "\n")
             elif floor(self.currentESPrice) <= self.lastESPrice - 5:
                 assert self.lastESPrice % 5 == 0
+                self.state_seq_id += 1
                 print("ES bid:", self.currentESPrice, "direction: down")
                 self.log_file_handle.write("ES bid:" + str(self.currentESPrice) + "direction: down\n")
                 self.priceDirection = -1
