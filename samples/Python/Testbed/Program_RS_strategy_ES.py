@@ -3131,11 +3131,11 @@ class ESDynamicStraddleStrategy(Object):
                 straddle_range = straddle_call_price + straddle_put_price
                 if straddle_range > 0 and quotes_available:
                     self.stop_loss_increment = math.ceil(straddle_range)
-                    print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
-                    self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                    print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
+                    self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                 else:
-                    print("straddle_range is zero or quotes are not available, not setting stop loss increment", "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
-                    self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                    print("straddle_range is zero or quotes are not available, not setting stop loss increment", "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
+                    self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                 
                 if straddle_range > 0 and quotes_available:
                     for strike, position in self.short_call_option_positions.items():
@@ -3354,10 +3354,13 @@ class ESDynamicStraddleStrategy(Object):
                             print("placing put buy order for strike:", _strike, "up_put_buy_option_contract:", up_put_buy_option_contract, "limit_price:", limit_price, "state_seq_id:", self.state_seq_id, "time:", current_time)
                             self.log_file_handle.write("placing put buy order for strike:" + str(_strike) + "up_put_buy_option_contract:" + str(up_put_buy_option_contract) + "limit_price:" + str(limit_price) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
 
-
-                self.lastESPrice = lastESPrice_
-                print("set new lastESPrice to:", self.lastESPrice, "state_seq_id:", self.state_seq_id, "time:", current_time, "quotes_available:", quotes_available, "straddle_call_price:", straddle_call_price, "straddle_put_price:", straddle_put_price, "straddle_range:", straddle_range)
-                self.log_file_handle.write("set new lastESPrice to:" + str(self.lastESPrice) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "quotes_available:" + str(quotes_available) + "straddle_call_price:" + str(straddle_call_price) + "straddle_put_price:" + str(straddle_put_price) + "straddle_range:" + str(straddle_range) + "\n")
+                if straddle_range > 0 and quotes_available:
+                    self.lastESPrice = lastESPrice_
+                    print("set new lastESPrice to:", self.lastESPrice, "state_seq_id:", self.state_seq_id, "time:", current_time, "quotes_available:", quotes_available, "straddle_call_price:", straddle_call_price, "straddle_put_price:", straddle_put_price, "straddle_range:", straddle_range)
+                    self.log_file_handle.write("set new lastESPrice to:" + str(self.lastESPrice) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "quotes_available:" + str(quotes_available) + "straddle_call_price:" + str(straddle_call_price) + "straddle_put_price:" + str(straddle_put_price) + "straddle_range:" + str(straddle_range) + "\n")
+                else:
+                    print("not setting new lastESPrice, quotes are not available or straddle range is zero", "state_seq_id:", self.state_seq_id, "time:", current_time, "quotes_available:", quotes_available, "straddle_call_price:", straddle_call_price, "straddle_put_price:", straddle_put_price, "straddle_range:", straddle_range)
+                    self.log_file_handle.write("not setting new lastESPrice, quotes are not available or straddle range is zero" + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "quotes_available:" + str(quotes_available) + "straddle_call_price:" + str(straddle_call_price) + "straddle_put_price:" + str(straddle_put_price) + "straddle_range:" + str(straddle_range) + "\n")
             elif floor(self.currentESPrice) <= self.lastESPrice - 5:
                 assert self.lastESPrice % 5 == 0
                 print("ES bid:", self.currentESPrice, "direction: down")
@@ -3424,11 +3427,11 @@ class ESDynamicStraddleStrategy(Object):
                 
                 if straddle_range > 0 and quotes_available:
                     self.stop_loss_increment = math.ceil(straddle_range)
-                    print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
-                    self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                    print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
+                    self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                 else:
-                    print("straddle_range is zero or quotes are not available, not setting stop loss increment", "straddle_range:", straddle_range, "state_seq_id:", self.state_seq_id, "time:", current_time)
-                    self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                    print("straddle_range is zero or quotes are not available, not setting stop loss increment", "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
+                    self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
 
                 if straddle_range > 0 and quotes_available:
                     for strike, position in self.short_call_option_positions.items():
@@ -3646,9 +3649,13 @@ class ESDynamicStraddleStrategy(Object):
                             print("placing hedge put buy order for strike:", _strike, "down_put_buy_option_contract:", down_put_buy_option_contract, "limit_price:", str(limit_price), "state_seq_id:", self.state_seq_id, "current_time:", current_time)
                             self.log_file_handle.write("placing put buy order for strike:" + str(_strike) + "down_put_buy_option_contract:" + str(down_put_buy_option_contract) + "limit_price:" + str(limit_price) + "state_seq_id:" + str(self.state_seq_id) + "current_time:" + str(current_time) + "\n")
                         
-                self.lastESPrice = lastESPrice_
-                print("set new lastESPrice to:", self.lastESPrice, "state_seq_id:", self.state_seq_id, "time:", current_time, "quotes_available:", quotes_available, "straddle_call_price:", straddle_call_price, "straddle_put_price:", straddle_put_price, "straddle_range:", straddle_range)
-                self.log_file_handle.write("set new lastESPrice to:" + str(self.lastESPrice) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "quotes_available:" + str(quotes_available) + "straddle_call_price:" + str(straddle_call_price) + "straddle_put_price:" + str(straddle_put_price) + "straddle_range:" + str(straddle_range) + "\n")
+                if straddle_range > 0 and quotes_available:
+                    self.lastESPrice = lastESPrice_
+                    print("set new lastESPrice to:", self.lastESPrice, "state_seq_id:", self.state_seq_id, "time:", current_time, "quotes_available:", quotes_available, "straddle_call_price:", straddle_call_price, "straddle_put_price:", straddle_put_price, "straddle_range:", straddle_range)
+                    self.log_file_handle.write("set new lastESPrice to:" + str(self.lastESPrice) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "quotes_available:" + str(quotes_available) + "straddle_call_price:" + str(straddle_call_price) + "straddle_put_price:" + str(straddle_put_price) + "straddle_range:" + str(straddle_range) + "\n")
+                else:
+                    print("not setting new lastESPrice, quotes are not available or straddle range is zero", "state_seq_id:", self.state_seq_id, "time:", current_time, "quotes_available:", quotes_available, "straddle_call_price:", straddle_call_price, "straddle_put_price:", straddle_put_price, "straddle_range:", straddle_range)
+                    self.log_file_handle.write("not setting new lastESPrice, quotes are not available or straddle range is zero" + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "quotes_available:" + str(quotes_available) + "straddle_call_price:" + str(straddle_call_price) + "straddle_put_price:" + str(straddle_put_price) + "straddle_range:" + str(straddle_range) + "\n")
             else:
                 assert self.lastESPrice % 5 == 0
                 self.priceDirection = 0
