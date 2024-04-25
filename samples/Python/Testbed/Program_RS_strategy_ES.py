@@ -2646,6 +2646,17 @@ class ESDynamicStraddleStrategy(Object):
     
         #request currently open orders
         testapp.reqAllOpenOrders()
+        
+        current_time = datetime.datetime.now()
+        last_subscribe_time = current_time
+        #re-subscribe to ES data if not receiving updates anymore for whatever reason
+        if (current_time - self.last_heartbeat_time).total_seconds() > 60:
+            if (current_time - last_subscribe_time).total_seconds() > 60:
+                req_id = testapp.nextOrderId()
+                self.subscribeToMarketData(req_id, testapp)
+                last_subscribe_time = datetime.datetime.now()
+                print("re-subscribed to ES market data at time ", last_subscribe_time)
+                self.log_file_handle.write("re-subscribed to ES market data at time " + str(last_subscribe_time) + "\n")
 
     def cancelpendingstplmtorder(self, testapp : TestApp, strike, right):
         #get current time in YYYYMMDD-HH:MM:SS format
@@ -3452,7 +3463,7 @@ class ESDynamicStraddleStrategy(Object):
                 self.place_short_straddle_option_to_open_orders(testapp, straddle_put_strike_, straddle_call_strike_, short_put_option_contract_to_open, short_call_option_contract_to_open, place_put_order, place_call_order)
 
                 #first, close all short call positions with strike price less than lastESPrice_ outside straddle range
-                current_time = datetime.now().time()
+                current_time = datetime.datetime.now()
                 straddle_range = straddle_call_price + straddle_put_price
                 
                 if straddle_range > 0 and quotes_available:
@@ -4057,7 +4068,7 @@ def status_monitor(status_queue_, stop_thread_, log_file_handle_):
         alarm_on = False
         last_heartbeat_time = datetime.datetime.now()
         while not stop_thread_:
-            if not status_queue_.empty():
+            while not status_queue_.empty():
                 last_heartbeat_time = status_queue_.get()
             if (datetime.datetime.now() - last_heartbeat_time).total_seconds() > 180:
                 if not alarm_on:
@@ -4165,7 +4176,7 @@ def main():
         #handle keyboard interrupt
         except KeyboardInterrupt:
             print("Keyboard interrupt")
-            current_time = datetime.datetime.now()
+            current_time = datetime.datetime.datetime.now()
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                 app.ESDynamicStraddleStrategy.log_file_handle.write("Keyboard interrupt at time:" + str(current_time) + "\n")
             #write state_seq_id file
@@ -4208,7 +4219,7 @@ def main():
                 app.disconnect()
     
     #stop the monitor thread
-    #monitor_thread.join()
+    monitor_thread.join()
             
 
 if __name__ == "__main__":
