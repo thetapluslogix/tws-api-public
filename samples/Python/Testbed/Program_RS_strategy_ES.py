@@ -2508,6 +2508,7 @@ class ESDynamicStraddleStrategy(Object):
 
         #make a thread safe shared queue for status monitoring
         self.status_queue_ = None #each time last_hearbeat_time is updated, put a message in this queue. a separate thread will monitor this queue and if no message is received for 3 minute, ring an alarm
+        self.max_spread_for_trade = 1.5 #max spread between bid and ask for a trade to be considered
         
         
 
@@ -2659,8 +2660,8 @@ class ESDynamicStraddleStrategy(Object):
         #re-subscribe to ES data if not receiving updates anymore for whatever reason
         if (current_time - self.last_heartbeat_time).total_seconds() > 60:
             if (current_time - last_subscribe_time).total_seconds() > 60:
-                req_id = testapp.nextOrderId()
-                self.subscribeToMarketData(req_id, testapp)
+                req_id_resub = testapp.nextOrderId()
+                self.subscribeToMarketData(req_id_resub, testapp)
                 last_subscribe_time = datetime.datetime.now()
                 print("re-subscribed to ES market data at time ", last_subscribe_time)
                 self.log_file_handle.write("re-subscribed to ES market data at time " + str(last_subscribe_time) + "\n")
@@ -3046,9 +3047,9 @@ class ESDynamicStraddleStrategy(Object):
                 call_contract.right = "C"
                 call_contract.multiplier = self.es_contract_multiplier
                 call_contract.strike = strike
-                reqId = testapp.nextOrderId()
-                testapp.reqMktData(reqId, call_contract, "", False, False, [])
-                testapp.MktDataRequest[reqId] = call_contract
+                reqId_call_sub = testapp.nextOrderId()
+                testapp.reqMktData(reqId_call_sub, call_contract, "", False, False, [])
+                testapp.MktDataRequest[reqId_call_sub] = call_contract
                 print("requesting market data for call_contract:", call_contract)
                 self.log_file_handle.write("requesting market data for call_contract:" + str(call_contract) + "\n")
             if is_put_subscription_needed:
@@ -3061,9 +3062,9 @@ class ESDynamicStraddleStrategy(Object):
                 put_contract.right = "P"
                 put_contract.multiplier = self.es_contract_multiplier
                 put_contract.strike = strike
-                reqId = testapp.nextOrderId()
-                testapp.reqMktData(reqId, put_contract, "", False, False, [])
-                testapp.MktDataRequest[reqId] = put_contract
+                reqId_put_sub = testapp.nextOrderId()
+                testapp.reqMktData(reqId_put_sub, put_contract, "", False, False, [])
+                testapp.MktDataRequest[reqId_put_sub] = put_contract
                 print("requesting market data for put_contract:", put_contract)
                 self.log_file_handle.write("requesting market data for put_contract:" + str(put_contract) + "\n")
         #process messages from the IB queue
@@ -3138,8 +3139,11 @@ class ESDynamicStraddleStrategy(Object):
                 if quotes_available:
                     bid_price = self.ES_FOP_quote_bid_call[straddle_call_strike_]
                     ask_price = self.ES_FOP_quote_ask_call[straddle_call_strike_]
-                    straddle_call_price = (bid_price + ask_price)/2
-                    if self.short_call_option_positions.get(straddle_call_strike_, 0) == 0:
+                    spread = ask_price - bid_price
+                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                    if spread_ok_for_trade:
+                        straddle_call_price = (bid_price + ask_price)/2
+                    if self.short_call_option_positions.get(straddle_call_strike_, 0) == 0 and spread_ok_for_trade:
                         short_call_option_contract_to_open.symbol = "ES"
                         short_call_option_contract_to_open.secType = "FOP"
                         short_call_option_contract_to_open.exchange = "CME"
@@ -3157,8 +3161,11 @@ class ESDynamicStraddleStrategy(Object):
                 if quotes_available:
                     bid_price = self.ES_FOP_quote_bid_put[straddle_put_strike_]
                     ask_price = self.ES_FOP_quote_ask_put[straddle_put_strike_]
-                    straddle_put_price = (bid_price + ask_price)/2
-                    if self.short_put_option_positions.get(straddle_put_strike_, 0) == 0:
+                    spread = ask_price - bid_price
+                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                    if spread_ok_for_trade:
+                        straddle_put_price = (bid_price + ask_price)/2
+                    if self.short_put_option_positions.get(straddle_put_strike_, 0) == 0 and spread_ok_for_trade:
                         short_put_option_contract_to_open.symbol = "ES"
                         short_put_option_contract_to_open.secType = "FOP"
                         short_put_option_contract_to_open.exchange = "CME"
@@ -3211,7 +3218,8 @@ class ESDynamicStraddleStrategy(Object):
                                     bid_price = self.ES_FOP_quote_bid_call[strike]
                                     ask_price = self.ES_FOP_quote_ask_call[strike]
                                     spread = ask_price - bid_price
-                                    if spread >= 0:
+                                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                                    if spread_ok_for_trade:
                                         if bid_price is not None and ask_price is not None and ask_price >= 10:
                                             tick_size = 0.25
                                         spread_size = int((ask_price - bid_price)/tick_size)
@@ -3238,8 +3246,8 @@ class ESDynamicStraddleStrategy(Object):
                                             self.cancelpendingstplmtorder(testapp, strike, "C")
                                             time.sleep(self.intra_order_sleep_time_ms/1000)
                                     else:
-                                        print("skip closing short call position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread, "state_seq_id:", self.state_seq_id, "time:", current_time)
-                                        self.log_file_handle.write("skip closing short call position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                                        print("skip closing short call position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread, "state_seq_id:", self.state_seq_id, "time:", current_time, "spread_ok_for_trade:", spread_ok_for_trade)
+                                        self.log_file_handle.write("skip closing short call position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "spread_ok_for_trade:" + str(spread_ok_for_trade) + "\n")
 
                 if straddle_range > 0 and quotes_available:
                     #close all short put positions with strike price greater than lastESPrice_
@@ -3268,7 +3276,8 @@ class ESDynamicStraddleStrategy(Object):
                                     bid_price = self.ES_FOP_quote_bid_put[strike]
                                     ask_price = self.ES_FOP_quote_ask_put[strike]
                                     spread = ask_price - bid_price
-                                    if spread >= 0:
+                                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                                    if spread_ok_for_trade:
                                         if bid_price is not None and ask_price is not None and ask_price >= 10:
                                             tick_size = 0.25
                                         spread_size = int((ask_price - bid_price)/tick_size)
@@ -3295,8 +3304,8 @@ class ESDynamicStraddleStrategy(Object):
                                             self.cancelpendingstplmtorder(testapp, strike, "P")
                                             time.sleep(self.intra_order_sleep_time_ms/1000)
                                     else:
-                                        print("skip closing short put position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread, "state_seq_id:", self.state_seq_id, "time:", current_time)
-                                        self.log_file_handle.write("skip closing short put position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                                        print("skip closing short put position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread, "state_seq_id:", self.state_seq_id, "time:", current_time, "spread_ok_for_trade:", spread_ok_for_trade)
+                                        self.log_file_handle.write("skip closing short put position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "spread_ok_for_trade:" + str(spread_ok_for_trade) + "\n")
                 if straddle_range > 0 and quotes_available:                
                     up_call_buy_order_needed  = True
                     total_long_call_positions = 0
@@ -3447,8 +3456,11 @@ class ESDynamicStraddleStrategy(Object):
                 if quotes_available:
                     bid_price = self.ES_FOP_quote_bid_call[straddle_call_strike_]
                     ask_price = self.ES_FOP_quote_ask_call[straddle_call_strike_]
-                    straddle_call_price = (bid_price + ask_price)/2    
-                    if self.short_call_option_positions.get(straddle_call_strike_, 0) == 0:
+                    spread = ask_price - bid_price
+                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                    if spread_ok_for_trade:
+                        straddle_call_price = (bid_price + ask_price)/2
+                    if self.short_call_option_positions.get(straddle_call_strike_, 0) == 0 and spread_ok_for_trade:
                         short_call_option_contract_to_open.symbol = "ES"
                         short_call_option_contract_to_open.secType = "FOP"
                         short_call_option_contract_to_open.exchange = "CME"
@@ -3464,8 +3476,11 @@ class ESDynamicStraddleStrategy(Object):
                 if quotes_available:
                     bid_price = self.ES_FOP_quote_bid_put[straddle_put_strike_]
                     ask_price = self.ES_FOP_quote_ask_put[straddle_put_strike_]
-                    straddle_put_price = (bid_price + ask_price)/2
-                    if self.short_put_option_positions.get(straddle_put_strike_, 0) == 0:
+                    spread = ask_price - bid_price
+                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                    if spread_ok_for_trade:
+                        straddle_put_price = (bid_price + ask_price)/2
+                    if self.short_put_option_positions.get(straddle_put_strike_, 0) == 0 and spread_ok_for_trade:
                         short_put_option_contract_to_open.symbol = "ES"
                         short_put_option_contract_to_open.secType = "FOP"
                         short_put_option_contract_to_open.exchange = "CME"
@@ -3518,7 +3533,8 @@ class ESDynamicStraddleStrategy(Object):
                                     bid_price = self.ES_FOP_quote_bid_call[strike]
                                     ask_price = self.ES_FOP_quote_ask_call[strike]
                                     spread = ask_price - bid_price
-                                    if spread >= 0:
+                                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                                    if spread_ok_for_trade:
                                         if bid_price is not None and ask_price is not None and ask_price >= 10:
                                             tick_size = 0.25
                                         spread_size = int((ask_price - bid_price)/tick_size)
@@ -3574,7 +3590,8 @@ class ESDynamicStraddleStrategy(Object):
                                     bid_price = self.ES_FOP_quote_bid_put[strike]
                                     ask_price = self.ES_FOP_quote_ask_put[strike]
                                     spread = ask_price - bid_price
-                                    if spread >= 0:
+                                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                                    if spread_ok_for_trade:
                                         if bid_price is not None and ask_price is not None and ask_price >= 10:
                                             tick_size = 0.25
                                         spread_size = int((ask_price - bid_price)/tick_size)
@@ -3736,7 +3753,8 @@ class ESDynamicStraddleStrategy(Object):
             bid_price = self.ES_FOP_quote_bid_put[straddle_put_strike_]
             ask_price = self.ES_FOP_quote_ask_put[straddle_put_strike_]
             spread = ask_price - bid_price
-            if spread >= 0:
+            spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+            if spread_ok_for_trade:
                 if bid_price is not None and ask_price is not None and ask_price >= 10:
                     tick_size = 0.25
                 spread_size = int((ask_price - bid_price)/tick_size)
@@ -3820,7 +3838,8 @@ class ESDynamicStraddleStrategy(Object):
             bid_price = self.ES_FOP_quote_bid_call[straddle_call_strike_]
             ask_price = self.ES_FOP_quote_ask_call[straddle_call_strike_]
             spread = ask_price - bid_price
-            if spread >= 0:
+            spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+            if spread_ok_for_trade:
                 if bid_price is not None and ask_price is not None and ask_price >= 10:
                     tick_size = 0.25
                 spread_size = int((ask_price - bid_price)/tick_size)
@@ -3910,7 +3929,8 @@ class ESDynamicStraddleStrategy(Object):
             bid_price = self.ES_FOP_quote_bid_put[straddle_put_strike_]
             ask_price = self.ES_FOP_quote_ask_put[straddle_put_strike_]
             spread = ask_price - bid_price
-            if spread >= 0:
+            spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+            if spread_ok_for_trade:
                 if bid_price is not None and ask_price is not None and ask_price >= 10:
                     tick_size = 0.25
                 spread_size = int((ask_price - bid_price)/tick_size)
@@ -3967,7 +3987,8 @@ class ESDynamicStraddleStrategy(Object):
             bid_price = self.ES_FOP_quote_bid_call[straddle_call_strike_]
             ask_price = self.ES_FOP_quote_ask_call[straddle_call_strike_]
             spread = ask_price - bid_price
-            if spread >= 0:
+            spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+            if spread_ok_for_trade:
                 if bid_price is not None and ask_price is not None and ask_price >= 10:
                     tick_size = 0.25
                 spread_size = int((ask_price - bid_price)/tick_size)
