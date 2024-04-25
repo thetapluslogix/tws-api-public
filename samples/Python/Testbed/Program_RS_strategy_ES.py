@@ -2496,11 +2496,11 @@ class ESDynamicStraddleStrategy(Object):
         self.quote_time_lag_limit = 10 #in seconds
         self.hedge_position_allowance = 2 #number of extra allowed hedge buys
         #make a thread safe shared queue for status monitoring
-        self.status_queue = queue.Queue() #each time last_hearbeat_time is updated, put a message in this queue. a separate thread will monitor this queue and if no message is received for 3 minute, ring an alarm
+        #self.status_queue = queue.Queue() #each time last_hearbeat_time is updated, put a message in this queue. a separate thread will monitor this queue and if no message is received for 3 minute, ring an alarm
         
         #start the status monitoring thread
-        self.status_monitor_thread = threading.Thread(target=self.status_monitor)
-        self.status_monitor_thread.start()
+        #self.status_monitor_thread = threading.Thread(target=self.status_monitor)
+        #self.status_monitor_thread.start()
         self.keyboard_interrupt_exit = False
 
     def status_monitor(self):
@@ -4066,7 +4066,7 @@ def main():
     # cmdLineParser.add_option("-c", action="store_True", dest="use_cache", default = False, help = "use the cache")
     # cmdLineParser.add_option("-f", action="store", type="string", dest="file", default="", help="the input file")
     cmdLineParser.add_argument("-p", "--port", action="store", type=int,
-                               dest="port", default=7496, help="The TCP port to use")
+                               dest="port", default=4001, help="The TCP port to use")
     cmdLineParser.add_argument("-C", "--global-cancel", action="store_true",
                                dest="global_cancel", default=False,
                                help="whether to trigger a globalCancel req")
