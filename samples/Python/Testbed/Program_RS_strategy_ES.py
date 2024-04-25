@@ -2432,7 +2432,7 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240425"
+        self.OptionTradeDate = "20240426"
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
@@ -2489,16 +2489,22 @@ class ESDynamicStraddleStrategy(Object):
         #try:
         if True:
             state_seq_id_file_name = "state_seq_id_" + self.OptionTradeDate + ".txt"
-            with open(state_seq_id_file_name, "r") as f:
-                self.state_seq_id = int(f.read())
-                self.log_file_handle.write("state_seq_id read from file as:" + str(self.state_seq_id) + "\n")
+            #check if file exists, if not, create it and write 0
+            if not os.path.exists(state_seq_id_file_name):
+                with open(state_seq_id_file_name, "w") as f:
+                    f.write("0")
+                    self.log_file_handle.write("state_seq_id file created with default value of 0\n")
+            else:
+                with open(state_seq_id_file_name, "r") as f:
+                    self.state_seq_id = int(f.read())
+                    self.log_file_handle.write("state_seq_id read from file as:" + str(self.state_seq_id) + "\n")
         #except:
         #    self.log_file_handle.write("state_seq_id file not found. Using default value of 0\n")
         self.quote_time_lag_limit = 60 #in seconds
         self.hedge_position_allowance = 3 #number of extra allowed hedge buys
         self.straddle_call_itm_offset = 5
         self.straddle_put_itm_offset = 5
-        self.outer_hedge_start_sr_multiplier = 1.5
+        self.outer_hedge_start_sr_multiplier = 1.4
 
         #make a thread safe shared queue for status monitoring
         self.status_queue_ = None #each time last_hearbeat_time is updated, put a message in this queue. a separate thread will monitor this queue and if no message is received for 3 minute, ring an alarm
