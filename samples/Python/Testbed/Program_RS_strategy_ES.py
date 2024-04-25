@@ -2486,13 +2486,14 @@ class ESDynamicStraddleStrategy(Object):
         self.state_seq_id = 0 #increment upon entering a up or down direction state. All orders of same category (e.g. short call at straddle strike) will use this seq id as part of its OCO tag so that if order is placed multiple times while in current state (due to glitches), only one will execute
         #read state_seq_id from file
         self.last_heartbeat_time = datetime.datetime.now()
-        try:
+        #try:
+        if True:
             state_seq_id_file_name = "state_seq_id_" + self.OptionTradeDate + ".txt"
             with open(state_seq_id_file_name, "r") as f:
                 self.state_seq_id = int(f.read())
                 self.log_file_handle.write("state_seq_id read from file as:" + str(self.state_seq_id) + "\n")
-        except:
-            self.log_file_handle.write("state_seq_id file not found. Using default value of 0\n")
+        #except:
+        #    self.log_file_handle.write("state_seq_id file not found. Using default value of 0\n")
         self.quote_time_lag_limit = 60 #in seconds
         self.hedge_position_allowance = 3 #number of extra allowed hedge buys
         self.straddle_call_itm_offset = 5
@@ -4074,13 +4075,17 @@ class ESDynamicStraddleStrategy(Object):
                 self.log_file_handle.write("state_seq_id:" + str(self.state_seq_id) + "placing short straddle call order for strike:" + str(straddle_call_strike_) + "limit_price:" + str(_price) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "profit_order:" + str(short_call_option_to_open_profit_order) + "loss_order:" + str(short_call_option_to_open_loss_order) + " time:" + str(current_time) + "\n")
             time.sleep(self.intra_order_sleep_time_ms/1000)
 
-def status_monitor(status_queue_, stop_thread_, log_file_handle_):
+def status_monitor(status_queue_, log_file_handle_):
         import winsound
+        global stop_thread
         print("status_monitor thread started")
         soundfilename = "C:\Windows\Media\Ring05.wav"
         alarm_on = False
         last_heartbeat_time = datetime.datetime.now()
-        while not stop_thread_:
+        if stop_thread:
+            print("status_monitor thread exiting")
+            return
+        while not stop_thread:
             while not status_queue_.empty():
                 last_heartbeat_time = status_queue_.get()
             if (datetime.datetime.now() - last_heartbeat_time).total_seconds() > 180:
@@ -4095,9 +4100,10 @@ def status_monitor(status_queue_, stop_thread_, log_file_handle_):
                 print("Heartbeat received. current time:", datetime.datetime.now(), "last heartbeat time:", last_heartbeat_time)
                 if log_file_handle_ is not None:
                     log_file_handle_.write("Heartbeat received. current time:" + str(datetime.datetime.now()) + " last heartbeat time:" + str(last_heartbeat_time) + "\n")
-                time.sleep(60)
+                time.sleep(1)
 
 def main():
+    global stop_thread
     SetupLogger()
     logging.debug("now is %s", datetime.datetime.now())
     logging.getLogger().setLevel(logging.ERROR)
@@ -4139,10 +4145,9 @@ def main():
     # sys.exit(1)
 
     #create a monitor thread to read from status_queue and detect hang
-    stop_thread = False
     log_file_handle = None
     status_queue = queue.Queue()
-    monitor_thread = threading.Thread(target=status_monitor, args=(status_queue, stop_thread, log_file_handle))
+    monitor_thread = threading.Thread(target=status_monitor, args=(status_queue, log_file_handle))
     monitor_thread.start()
 
 
@@ -4193,15 +4198,16 @@ def main():
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                 app.ESDynamicStraddleStrategy.log_file_handle.write("Keyboard interrupt at time:" + str(current_time) + "\n")
             #write state_seq_id file
-            try:
+            #try:
+            if True:
                 state_seq_id_file_name = "state_seq_id_" + app.ESDynamicStraddleStrategy.OptionTradeDate + ".txt"
                 with open(state_seq_id_file_name, "w") as f:
                     f.write(str(app.ESDynamicStraddleStrategy.state_seq_id))
                 if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                     app.ESDynamicStraddleStrategy.log_file_handle.write("Writing state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
-            except:
-                if app.ESDynamicStraddleStrategy.log_file_handle is not None:
-                    app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
+            #except:
+            #    if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+            #        app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
             alive = False
             stop_thread = True
         except Exception as e:
@@ -4212,18 +4218,20 @@ def main():
             if app.nextValidOrderId:
                 app.nextValidOrderId += 1
         finally:
+            stop_thread = True
             current_time = datetime.datetime.now()
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                 app.ESDynamicStraddleStrategy.log_file_handle.write("disconnecting at time:" + str(current_time) + "\n")
-            try:
+            #try:
+            if True:
                 state_seq_id_file_name = "state_seq_id_" + app.ESDynamicStraddleStrategy.OptionTradeDate + ".txt"
                 with open(state_seq_id_file_name, "w") as f:
                     f.write(str(app.ESDynamicStraddleStrategy.state_seq_id))
                 if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                     app.ESDynamicStraddleStrategy.log_file_handle.write("Writing state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
-            except:
-                if app.ESDynamicStraddleStrategy.log_file_handle is not None:
-                    app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
+            #except:
+            #    if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+            #        app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
             #app.dumpTestCoverageSituation()
             #app.dumpReqAnsErrSituation()
             #check whether api is still connected
@@ -4231,9 +4239,11 @@ def main():
             if api_connected:
                 app.disconnect()
     
+    print("stop_thread:", stop_thread)
     #stop the monitor thread
     monitor_thread.join()
             
 
 if __name__ == "__main__":
+    stop_thread = False
     main()
