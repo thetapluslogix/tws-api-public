@@ -2482,7 +2482,7 @@ class ESDynamicStraddleStrategy(Object):
         self.es_contract_multiplier = 50
         self.positions_can_start_trading = False
         self.orders_can_start_trading = False
-        self.rs_hedge_divisor = 10
+        self.rs_hedge_divisor = 20
         self.state_seq_id = 0 #increment upon entering a up or down direction state. All orders of same category (e.g. short call at straddle strike) will use this seq id as part of its OCO tag so that if order is placed multiple times while in current state (due to glitches), only one will execute
         #read state_seq_id from file
         self.last_heartbeat_time = datetime.datetime.now()
@@ -2497,7 +2497,7 @@ class ESDynamicStraddleStrategy(Object):
         self.hedge_position_allowance = 3 #number of extra allowed hedge buys
         self.straddle_call_itm_offset = 5
         self.straddle_put_itm_offset = 5
-        self.outer_hedge_start_sr_multiplier = 1.8
+        self.outer_hedge_start_sr_multiplier = 1.5
 
         #make a thread safe shared queue for status monitoring
         self.status_queue_ = None #each time last_hearbeat_time is updated, put a message in this queue. a separate thread will monitor this queue and if no message is received for 3 minute, ring an alarm
@@ -3341,6 +3341,7 @@ class ESDynamicStraddleStrategy(Object):
                             testapp.placeOrder(testapp.nextValidOrderId, up_call_buy_option_contract, o)
                             up_call_buy_OCAOrderId = testapp.nextValidOrderId
                             testapp.nextValidOrderId += 1
+                            time.sleep(self.intra_order_sleep_time_ms/1000)
                         
                 if straddle_range > 0 and quotes_available:
                     up_put_buy_order_needed  = True
@@ -3394,6 +3395,7 @@ class ESDynamicStraddleStrategy(Object):
                             testapp.nextValidOrderId += 1
                             print("placing put buy order for strike:", _strike, "up_put_buy_option_contract:", up_put_buy_option_contract, "limit_price:", limit_price, "state_seq_id:", self.state_seq_id, "time:", current_time)
                             self.log_file_handle.write("placing put buy order for strike:" + str(_strike) + "up_put_buy_option_contract:" + str(up_put_buy_option_contract) + "limit_price:" + str(limit_price) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                            time.sleep(self.intra_order_sleep_time_ms/1000)
 
                 if straddle_range > 0 and quotes_available:
                     self.lastESPrice = lastESPrice_
@@ -3646,6 +3648,7 @@ class ESDynamicStraddleStrategy(Object):
                             testapp.nextValidOrderId += 1
                             print("placing call buy order for strike:", _strike, "down_call_buy_option_contract:", down_call_buy_option_contract, "limit_price:", limit_price, "state_seq_id:", self.state_seq_id, "current_time:", current_time)
                             self.log_file_handle.write("placing call buy order for strike:" + str(_strike) + "down_call_buy_option_contract:" + str(down_call_buy_option_contract) + "limit_price:" + str(limit_price) + "state_seq_id:" + str(self.state_seq_id) + "current_time:" + str(current_time) + "\n")
+                            time.sleep(self.intra_order_sleep_time_ms/1000)
 
                 if straddle_range > 0 and quotes_available:
                     down_put_buy_order_needed  = True
@@ -3698,7 +3701,8 @@ class ESDynamicStraddleStrategy(Object):
                             testapp.nextValidOrderId += 1
                             print("placing hedge put buy order for strike:", _strike, "down_put_buy_option_contract:", down_put_buy_option_contract, "limit_price:", str(limit_price), "state_seq_id:", self.state_seq_id, "current_time:", current_time)
                             self.log_file_handle.write("placing put buy order for strike:" + str(_strike) + "down_put_buy_option_contract:" + str(down_put_buy_option_contract) + "limit_price:" + str(limit_price) + "state_seq_id:" + str(self.state_seq_id) + "current_time:" + str(current_time) + "\n")
-                        
+                            time.sleep(self.intra_order_sleep_time_ms/1000)
+
                 if straddle_range > 0 and quotes_available:
                     self.lastESPrice = lastESPrice_
                     print("set new lastESPrice to:", self.lastESPrice, "state_seq_id:", self.state_seq_id, "time:", current_time, "quotes_available:", quotes_available, "straddle_call_price:", straddle_call_price, "straddle_put_price:", straddle_put_price, "straddle_range:", straddle_range)
