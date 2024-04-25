@@ -2432,7 +2432,7 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240424"
+        self.OptionTradeDate = "20240425"
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
@@ -2485,6 +2485,7 @@ class ESDynamicStraddleStrategy(Object):
         self.rs_hedge_divisor = 15
         self.state_seq_id = 0 #increment upon entering a up or down direction state. All orders of same category (e.g. short call at straddle strike) will use this seq id as part of its OCO tag so that if order is placed multiple times while in current state (due to glitches), only one will execute
         #read state_seq_id from file
+        self.last_heartbeat_time = datetime.datetime.now()
         try:
             state_seq_id_file_name = "state_seq_id_" + self.OptionTradeDate + ".txt"
             with open(state_seq_id_file_name, "r") as f:
@@ -2494,6 +2495,32 @@ class ESDynamicStraddleStrategy(Object):
             self.log_file_handle.write("state_seq_id file not found. Using default value of 0\n")
         self.quote_time_lag_limit = 10 #in seconds
         self.hedge_position_allowance = 2 #number of extra allowed hedge buys
+        #make a thread safe shared queue for status monitoring
+        self.status_queue = queue.Queue() #each time last_hearbeat_time is updated, put a message in this queue. a separate thread will monitor this queue and if no message is received for 3 minute, ring an alarm
+        
+        #start the status monitoring thread
+        self.status_monitor_thread = threading.Thread(target=self.status_monitor)
+        self.status_monitor_thread.start()
+        self.keyboard_interrupt_exit = False
+
+    def status_monitor(self):
+        import winsound
+        soundfilename = "C:\Windows\Media\Ring05.wav"
+        alarm_on = False
+        while not self.keyboard_interrupt_exit:
+            if (datetime.datetime.now() - self.last_heartbeat_time).total_seconds() > 180:
+                if not alarm_on:
+                    alarm_on = True
+                    print("No heartbeat received for 3 minutes. Raising alarm: current time:", datetime.datetime.now(), "last heartbeat time:", self.last_heartbeat_time)
+                    self.log_file_handle.write("No heartbeat received for 3 minutes. Raising alarm: current time:" + str(datetime.datetime.now()) + " last heartbeat time:" + str(self.last_heartbeat_time) + "\n")
+                winsound.PlaySound(soundfilename, winsound.SND_FILENAME)
+            else:
+                alarm_on = False
+                print("Heartbeat received. current time:", datetime.datetime.now(), "last heartbeat time:", self.last_heartbeat_time)
+                self.log_file_handle.write("Heartbeat received. current time:" + str(datetime.datetime.now()) + " last heartbeat time:" + str(self.last_heartbeat_time) + "\n")
+                time.sleep(60)
+        
+
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
         assert reqContract.symbol == "ES" and reqContract.secType == "FOP" and reqContract.lastTradeDateOrContractMonth == self.OptionTradeDate
         #get current time as unique timestamp
@@ -2994,6 +3021,7 @@ class ESDynamicStraddleStrategy(Object):
         
         #request market data for surrounding ES FOP contracts
         current_time = datetime.datetime.now()
+        self.last_heartbeat_time = current_time
         for strike_off in range(-30, 30, 5):
             is_call_subscription_needed = True
             is_put_subscription_needed = True
@@ -4070,19 +4098,37 @@ def main():
     # print(tc.reqId2nReq)
     # sys.exit(1)
     alive = True
+    client_id = 0
     while alive:
         try:
+            if client_id > 0:
+                time.sleep(60)
             app = TestApp()
             if args.global_cancel:
                 app.globalCancelOnly = True
             # ! [connect]
-            app.connect("127.0.0.1", args.port, clientId=0)
+            app.connect("127.0.0.1", args.port, clientId=client_id)
             # ! [connect]
             print("serverVersion:%s connectionTime:%s" % (app.serverVersion(),
                                                         app.twsConnectionTime()))
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
-                app.ESDynamicStraddleStrategy.log_file_handle.write("serverVersion:" + str(app.serverVersion()) + " connectionTime:" + str(app.twsConnectionTime()) + "\n")
-
+                app.ESDynamicStraddleStrategy.log_file_handle.write("serverVersion:" + str(app.serverVersion()) + " connectionTime:" + str(app.twsConnectionTime()) + " client_id:" + str(client_id) + "\n")
+            
+            #for next iteration if it happens
+            client_id += 1
+            if client_id > 31:
+                client_id = 0
+                time.sleep(60)
+            #wait until connection is established
+            waited_seconds = 0
+            while not app.isConnected():
+                time.sleep(1)
+                waited_seconds += 1
+                if waited_seconds > 10:
+                    import winsound
+                    soundfilename = "C:\Windows\Media\Ring05.wav"
+                    #play soundfilename file
+                    winsound.PlaySound(soundfilename, winsound.SND_FILENAME)
 
             # ! [clientrun]
             app.run()
@@ -4104,6 +4150,7 @@ def main():
                 if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                     app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
             alive = False
+            app.ESDynamicStraddleStrategy.keyboard_interrupt_exit = True
         except Exception as e:
             print("Exception:", e)
             current_time = datetime.datetime.now()
@@ -4126,8 +4173,11 @@ def main():
                     app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
             #app.dumpTestCoverageSituation()
             #app.dumpReqAnsErrSituation()
-            app.disconnect()
-
+            #check whether api is still connected
+            api_connected = app.isConnected()
+            if api_connected:
+                app.disconnect()
+            
 
 if __name__ == "__main__":
     main()
