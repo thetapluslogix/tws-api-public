@@ -406,14 +406,14 @@ class TestApp(TestWrapper, TestClient):
     def openOrder(self, orderId: OrderId, contract: Contract, order: Order,
                   orderState: OrderState):
         super().openOrder(orderId, contract, order, orderState)
-        print("OpenOrder. PermId:", intMaxString(order.permId), "ClientId:", intMaxString(order.clientId), " OrderId:", intMaxString(orderId), 
-            "Account:", order.account, "Symbol:", contract.symbol, "SecType:", contract.secType,
-            "Exchange:", contract.exchange, "Action:", order.action, "OrderType:", order.orderType,
-            "TotalQty:", decimalMaxString(order.totalQuantity), "CashQty:", floatMaxString(order.cashQty), 
-            "LmtPrice:", floatMaxString(order.lmtPrice), "AuxPrice:", floatMaxString(order.auxPrice), "Status:", orderState.status,
-            "MinTradeQty:", intMaxString(order.minTradeQty), "MinCompeteSize:", intMaxString(order.minCompeteSize),
-            "competeAgainstBestOffset:", "UpToMid" if order.competeAgainstBestOffset == COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID else floatMaxString(order.competeAgainstBestOffset),
-            "MidOffsetAtWhole:", floatMaxString(order.midOffsetAtWhole),"MidOffsetAtHalf:" ,floatMaxString(order.midOffsetAtHalf))
+        #print("OpenOrder. PermId:", intMaxString(order.permId), "ClientId:", intMaxString(order.clientId), " OrderId:", intMaxString(orderId), 
+        #    "Account:", order.account, "Symbol:", contract.symbol, "SecType:", contract.secType,
+        #    "Exchange:", contract.exchange, "Action:", order.action, "OrderType:", order.orderType,
+        #    "TotalQty:", decimalMaxString(order.totalQuantity), "CashQty:", floatMaxString(order.cashQty), 
+        #    "LmtPrice:", floatMaxString(order.lmtPrice), "AuxPrice:", floatMaxString(order.auxPrice), "Status:", orderState.status,
+        #    "MinTradeQty:", intMaxString(order.minTradeQty), "MinCompeteSize:", intMaxString(order.minCompeteSize),
+        #    "competeAgainstBestOffset:", "UpToMid" if order.competeAgainstBestOffset == COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID else floatMaxString(order.competeAgainstBestOffset),
+        #    "MidOffsetAtWhole:", floatMaxString(order.midOffsetAtWhole),"MidOffsetAtHalf:" ,floatMaxString(order.midOffsetAtHalf))
         #write ESDynamicStraddleStrategy log file
         self.ESDynamicStraddleStrategy.log_file_handle.write("OpenOrder. PermId: %s ClientId: %s OrderId: %s Account: %s Symbol: %s SecType: %s Exchange: %s Action: %s OrderType: %s TotalQty: %s CashQty: %s LmtPrice: %s AuxPrice: %s Status: %s MinTradeQty: %s MinCompeteSize: %s competeAgainstBestOffset: %s MidOffsetAtWhole: %s MidOffsetAtHalf: %s\n" % (intMaxString(order.permId), intMaxString(order.clientId), intMaxString(orderId), order.account, contract.symbol, contract.secType, contract.exchange, order.action, order.orderType, decimalMaxString(order.totalQuantity), floatMaxString(order.cashQty), floatMaxString(order.lmtPrice), floatMaxString(order.auxPrice), orderState.status, intMaxString(order.minTradeQty), intMaxString(order.minCompeteSize), "UpToMid" if order.competeAgainstBestOffset == COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID else floatMaxString(order.competeAgainstBestOffset), floatMaxString(order.midOffsetAtWhole), floatMaxString(order.midOffsetAtHalf)))
         self.message_from_ib_queue.put(("open_order", orderId, contract, order, orderState))
@@ -427,7 +427,7 @@ class TestApp(TestWrapper, TestClient):
     # ! [openorderend]
     def openOrderEnd(self):
         super().openOrderEnd()
-        print("OpenOrderEnd")
+        #print("OpenOrderEnd")
         self.ESDynamicStraddleStrategy.log_file_handle.write("OpenOrderEnd\n")
         self.message_from_ib_queue.put(("open_order_end",))
         #self.ESDynamicStraddleStrategy.log_file_handle.write("OpenOrderEnd\n")
@@ -450,11 +450,11 @@ class TestApp(TestWrapper, TestClient):
                     whyHeld: str, mktCapPrice: float):
         super().orderStatus(orderId, status, filled, remaining,
                             avgFillPrice, permId, parentId, lastFillPrice, clientId, whyHeld, mktCapPrice)
-        print("OrderStatus. Id:", orderId, "Status:", status, "Filled:", decimalMaxString(filled),
-              "Remaining:", decimalMaxString(remaining), "AvgFillPrice:", floatMaxString(avgFillPrice),
-              "PermId:", intMaxString(permId), "ParentId:", intMaxString(parentId), "LastFillPrice:",
-              floatMaxString(lastFillPrice), "ClientId:", intMaxString(clientId), "WhyHeld:",
-              whyHeld, "MktCapPrice:", floatMaxString(mktCapPrice))
+        #print("OrderStatus. Id:", orderId, "Status:", status, "Filled:", decimalMaxString(filled),
+        #      "Remaining:", decimalMaxString(remaining), "AvgFillPrice:", floatMaxString(avgFillPrice),
+        #      "PermId:", intMaxString(permId), "ParentId:", intMaxString(parentId), "LastFillPrice:",
+        #      floatMaxString(lastFillPrice), "ClientId:", intMaxString(clientId), "WhyHeld:",
+        #      whyHeld, "MktCapPrice:", floatMaxString(mktCapPrice))
         #write ESDynamicStraddleStrategy log file
         self.ESDynamicStraddleStrategy.log_file_handle.write("OrderStatus. Id: %s Status: %s Filled: %s Remaining: %s AvgFillPrice: %s PermId: %s ParentId: %s LastFillPrice: %s ClientId: %s WhyHeld: %s MktCapPrice: %s\n" % (orderId, status, decimalMaxString(filled), decimalMaxString(remaining), floatMaxString(avgFillPrice), intMaxString(permId), intMaxString(parentId), floatMaxString(lastFillPrice), intMaxString(clientId), whyHeld, floatMaxString(mktCapPrice)))
     # ! [orderstatus]
@@ -620,8 +620,8 @@ class TestApp(TestWrapper, TestClient):
     def updateAccountValue(self, key: str, val: str, currency: str,
                            accountName: str):
         super().updateAccountValue(key, val, currency, accountName)
-        print("UpdateAccountValue. Key:", key, "Value:", val,
-              "Currency:", currency, "AccountName:", accountName)
+        #print("UpdateAccountValue. Key:", key, "Value:", val,
+        #      "Currency:", currency, "AccountName:", accountName)
         #write ESDynamicStraddleStrategy log file
         self.ESDynamicStraddleStrategy.log_file_handle.write("UpdateAccountValue. Key: %s Value: %s Currency: %s AccountName: %s\n" % (key, val, currency, accountName))
     # ! [updateaccountvalue]
@@ -634,11 +634,11 @@ class TestApp(TestWrapper, TestClient):
                         realizedPNL: float, accountName: str):
         super().updatePortfolio(contract, position, marketPrice, marketValue,
                                 averageCost, unrealizedPNL, realizedPNL, accountName)
-        print("UpdatePortfolio.", "Symbol:", contract.symbol, "SecType:", contract.secType, "Exchange:",
-              contract.exchange, "Position:", decimalMaxString(position), "MarketPrice:", floatMaxString(marketPrice),
-              "MarketValue:", floatMaxString(marketValue), "AverageCost:", floatMaxString(averageCost),
-              "UnrealizedPNL:", floatMaxString(unrealizedPNL), "RealizedPNL:", floatMaxString(realizedPNL),
-              "AccountName:", accountName)
+        #print("UpdatePortfolio.", "Symbol:", contract.symbol, "SecType:", contract.secType, "Exchange:",
+        #      contract.exchange, "Position:", decimalMaxString(position), "MarketPrice:", floatMaxString(marketPrice),
+        #      "MarketValue:", floatMaxString(marketValue), "AverageCost:", floatMaxString(averageCost),
+        #      "UnrealizedPNL:", floatMaxString(unrealizedPNL), "RealizedPNL:", floatMaxString(realizedPNL),
+        #      "AccountName:", accountName)
         #write ESDynamicStraddleStrategy log file
         self.ESDynamicStraddleStrategy.log_file_handle.write("UpdatePortfolio. Symbol: %s SecType: %s Exchange: %s Position: %s MarketPrice: %s MarketValue: %s AverageCost: %s UnrealizedPNL: %s RealizedPNL: %s AccountName: %s\n" % (contract.symbol, contract.secType, contract.exchange, decimalMaxString(position), floatMaxString(marketPrice), floatMaxString(marketValue), floatMaxString(averageCost), floatMaxString(unrealizedPNL), floatMaxString(realizedPNL), accountName))
     # ! [updateportfolio]
@@ -647,7 +647,7 @@ class TestApp(TestWrapper, TestClient):
     # ! [updateaccounttime]
     def updateAccountTime(self, timeStamp: str):
         super().updateAccountTime(timeStamp)
-        print("UpdateAccountTime. Time:", timeStamp)
+        #print("UpdateAccountTime. Time:", timeStamp)
         #write ESDynamicStraddleStrategy log file
         self.ESDynamicStraddleStrategy.log_file_handle.write("UpdateAccountTime. Time: %s\n" % timeStamp)
     # ! [updateaccounttime]
@@ -666,9 +666,9 @@ class TestApp(TestWrapper, TestClient):
     def position(self, account: str, contract: Contract, position: Decimal,
                  avgCost: float):
         super().position(account, contract, position, avgCost)
-        print("Position.", "Account:", account, "Symbol:", contract.symbol, "SecType:",
-              contract.secType, "Currency:", contract.currency,
-              "Position:", decimalMaxString(position), "Avg cost:", floatMaxString(avgCost))
+        #print("Position.", "Account:", account, "Symbol:", contract.symbol, "SecType:",
+        #      contract.secType, "Currency:", contract.currency,
+        #      "Position:", decimalMaxString(position), "Avg cost:", floatMaxString(avgCost))
         #write ESDynamicStraddleStrategy log file
         self.ESDynamicStraddleStrategy.log_file_handle.write("Position. Account: %s Symbol: %s SecType: %s Currency: %s Position: %s Avg cost: %s\n" % (account, contract.symbol, contract.secType, contract.currency, decimalMaxString(position), floatMaxString(avgCost)))
         self.message_from_ib_queue.put(("position", account, contract, position, avgCost))
@@ -678,7 +678,7 @@ class TestApp(TestWrapper, TestClient):
     # ! [positionend]
     def positionEnd(self):
         super().positionEnd()
-        print("PositionEnd")
+        #print("PositionEnd")
         #write ESDynamicStraddleStrategy log file
         self.ESDynamicStraddleStrategy.log_file_handle.write("PositionEnd\n")
         self.message_from_ib_queue.put(("position_end",))
@@ -2493,7 +2493,7 @@ class ESDynamicStraddleStrategy(Object):
                 self.log_file_handle.write("state_seq_id read from file as:" + str(self.state_seq_id) + "\n")
         except:
             self.log_file_handle.write("state_seq_id file not found. Using default value of 0\n")
-        self.quote_time_lag_limit = 10 #in seconds
+        self.quote_time_lag_limit = 60 #in seconds
         self.hedge_position_allowance = 3 #number of extra allowed hedge buys
         self.straddle_call_itm_offset = 5
         self.straddle_put_itm_offset = 5
@@ -2547,7 +2547,7 @@ class ESDynamicStraddleStrategy(Object):
                 contract = msg[2]
                 position = msg[3]
                 avgCost = msg[4]
-                print("position message received. account:", account, "contract:", contract, "position:", position, "avgCost:", avgCost)
+                #print("position message received. account:", account, "contract:", contract, "position:", position, "avgCost:", avgCost)
                 self.log_file_handle.write("position message received. account:" + str(account) + " contract:" + str(contract) + " position:" + str(position) + " avgCost:" + str(avgCost) + "\n")
                 if contract.symbol == "ES" and contract.secType == "FOP" and contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
                     if position > 0:
@@ -2580,20 +2580,20 @@ class ESDynamicStraddleStrategy(Object):
                                 del self.short_put_option_positions[contract.strike]
                                 del self.short_put_option_avgcost[contract.strike]
                 #print updated positions
-                print("long_call_option_positions:", self.long_call_option_positions, "long_call_option_avgcost:", self.long_call_option_avgcost)
+                #print("long_call_option_positions:", self.long_call_option_positions, "long_call_option_avgcost:", self.long_call_option_avgcost)
                 self.log_file_handle.write("long_call_option_positions:" + str(self.long_call_option_positions) + "long_call_option_avgcost:" + str(self.long_call_option_avgcost) + "\n")
-                print("short_call_option_positions:", self.short_call_option_positions, "short_call_option_avgcost:", self.short_call_option_avgcost)
+                #print("short_call_option_positions:", self.short_call_option_positions, "short_call_option_avgcost:", self.short_call_option_avgcost)
                 self.log_file_handle.write("short_call_option_positions:" + str(self.short_call_option_positions) + "short_call_option_avgcost:" + str(self.short_call_option_avgcost) + "\n")
-                print("long_put_option_positions:", self.long_put_option_positions, "long_put_option_avgcost:", self.long_put_option_avgcost)
+                #print("long_put_option_positions:", self.long_put_option_positions, "long_put_option_avgcost:", self.long_put_option_avgcost)
                 self.log_file_handle.write("long_put_option_positions:" + str(self.long_put_option_positions) + "long_put_option_avgcost:" + str(self.long_put_option_avgcost) + "\n")
-                print("short_put_option_positions:", self.short_put_option_positions, "short_put_option_avgcost:", self.short_put_option_avgcost)
+                #print("short_put_option_positions:", self.short_put_option_positions, "short_put_option_avgcost:", self.short_put_option_avgcost)
                 self.log_file_handle.write("short_put_option_positions:" + str(self.short_put_option_positions) + "short_put_option_avgcost:" + str(self.short_put_option_avgcost) + "\n")
             elif msg_type == "open_order":
                 order_id = msg[1]
                 contract = msg[2]
                 order = msg[3]
                 order_state = msg[4]
-                print("open_order message received. order_id:", order_id, "contract:", contract, "order:", order, "order_state:", order_state)
+                #print("open_order message received. order_id:", order_id, "contract:", contract, "order:", order, "order_state:", order_state)
                 self.log_file_handle.write("open_order message received. order_id:" + str(order_id) + " contract:" + str(contract) + " order:" + str(order) + " order_state:" + str(order_state) + "\n")
                 if contract.symbol == "ES" and contract.secType == "FOP" and contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
                     if order.action == "BUY" and order.orderType == "STP LMT" and order.lmtPrice is not None and order.lmtPrice > 0 and order.auxPrice is not None and order.auxPrice > 0 and order_state.status == "PreSubmitted":
@@ -2632,11 +2632,11 @@ class ESDynamicStraddleStrategy(Object):
                             self.put_stplmt_profit_open_orders_tuples[contract.strike] = (order_id, contract, order, order_state)
                             self.put_bracket_profit_order_maintenance_on_hold_for_strike[contract.strike] = False
             elif msg_type == "position_end":
-                print("position_end message received")
+                #print("position_end message received")
                 self.log_file_handle.write("position_end message received\n")
                 self.positions_can_start_trading = True
             elif msg_type == "open_order_end":
-                print("open_order_end message received")
+                #print("open_order_end message received")
                 self.log_file_handle.write("open_order_end message received\n")
                 self.orders_can_start_trading = True
             self.call_stplmt_open_orders_tuples_active = False
@@ -3114,7 +3114,8 @@ class ESDynamicStraddleStrategy(Object):
                 straddle_put_strike_ = 0
                 short_call_option_contract_to_open = Contract()
                 short_put_option_contract_to_open = Contract()
-                    
+
+                straddle_strike_ = lastESPrice_    
                 straddle_call_strike_ = lastESPrice_ - self.straddle_call_itm_offset
                 straddle_put_strike_ = lastESPrice_ + self.straddle_put_itm_offset
                             
@@ -3127,39 +3128,43 @@ class ESDynamicStraddleStrategy(Object):
                                     and self.ES_FOP_quote_ask_call.get(straddle_strike_, None) is not None and self.ES_FOP_quote_ask_call_time[straddle_strike_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
                                     and self.ES_FOP_quote_bid_put.get(straddle_strike_, None) is not None and self.ES_FOP_quote_bid_put_time[straddle_strike_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
                                     and self.ES_FOP_quote_ask_put.get(straddle_strike_, None) is not None and self.ES_FOP_quote_ask_put_time[straddle_strike_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit)
-                if self.short_call_option_positions.get(straddle_call_strike_, 0) == 0 and quotes_available:
-                    short_call_option_contract_to_open.symbol = "ES"
-                    short_call_option_contract_to_open.secType = "FOP"
-                    short_call_option_contract_to_open.exchange = "CME"
-                    short_call_option_contract_to_open.currency = "USD"
-                    short_call_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
-                    short_call_option_contract_to_open.strike = straddle_call_strike_
-                    short_call_option_contract_to_open.right = "C"
-                    short_call_option_contract_to_open.multiplier = self.es_contract_multiplier
+                if quotes_available:
                     bid_price = self.ES_FOP_quote_bid_call[straddle_call_strike_]
                     ask_price = self.ES_FOP_quote_ask_call[straddle_call_strike_]
                     straddle_call_price = (bid_price + ask_price)/2
-                    print("need to place call order for strike:", straddle_call_strike_, "short_call_option_contract_to_open:", short_call_option_contract_to_open, "straddle_call_price:", straddle_call_price, "state_seq_id:", self.state_seq_id)
-                    self.log_file_handle.write("need to place call order for strike:" + str(straddle_call_strike_) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "straddle_call_price:" + str(straddle_call_price) + "state_seq_id:" + str(self.state_seq_id) + "\n")
+                    if self.short_call_option_positions.get(straddle_call_strike_, 0) == 0:
+                        short_call_option_contract_to_open.symbol = "ES"
+                        short_call_option_contract_to_open.secType = "FOP"
+                        short_call_option_contract_to_open.exchange = "CME"
+                        short_call_option_contract_to_open.currency = "USD"
+                        short_call_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
+                        short_call_option_contract_to_open.strike = straddle_call_strike_
+                        short_call_option_contract_to_open.right = "C"
+                        short_call_option_contract_to_open.multiplier = self.es_contract_multiplier
+                        
+                        print("need to place call order for strike:", straddle_call_strike_, "short_call_option_contract_to_open:", short_call_option_contract_to_open, "straddle_call_price:", straddle_call_price, "state_seq_id:", self.state_seq_id)
+                        self.log_file_handle.write("need to place call order for strike:" + str(straddle_call_strike_) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "straddle_call_price:" + str(straddle_call_price) + "state_seq_id:" + str(self.state_seq_id) + "\n")
 
-                    place_call_order = True
-                    
-                if self.short_put_option_positions.get(straddle_put_strike_, 0) == 0 and quotes_available:
-                    short_put_option_contract_to_open.symbol = "ES"
-                    short_put_option_contract_to_open.secType = "FOP"
-                    short_put_option_contract_to_open.exchange = "CME"
-                    short_put_option_contract_to_open.currency = "USD"
-                    short_put_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
-                    short_put_option_contract_to_open.strike = straddle_put_strike_
-                    short_put_option_contract_to_open.right = "P"
-                    short_put_option_contract_to_open.multiplier = self.es_contract_multiplier
+                        place_call_order = True
+                
+                if quotes_available:
                     bid_price = self.ES_FOP_quote_bid_put[straddle_put_strike_]
                     ask_price = self.ES_FOP_quote_ask_put[straddle_put_strike_]
                     straddle_put_price = (bid_price + ask_price)/2
-                    print("need to place put order for strike:", straddle_put_strike_, "short_put_option_contract_to_open:", short_put_option_contract_to_open, "straddle_put_price:", straddle_put_price, "state_seq_id:", self.state_seq_id)
-                    self.log_file_handle.write("need to place put order for strike:" + str(straddle_put_strike_) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "straddle_put_price:" + str(straddle_put_price) + "state_seq_id:" + str(self.state_seq_id) + "\n")
-                    
-                    place_put_order = True
+                    if self.short_put_option_positions.get(straddle_put_strike_, 0) == 0:
+                        short_put_option_contract_to_open.symbol = "ES"
+                        short_put_option_contract_to_open.secType = "FOP"
+                        short_put_option_contract_to_open.exchange = "CME"
+                        short_put_option_contract_to_open.currency = "USD"
+                        short_put_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
+                        short_put_option_contract_to_open.strike = straddle_put_strike_
+                        short_put_option_contract_to_open.right = "P"
+                        short_put_option_contract_to_open.multiplier = self.es_contract_multiplier
+                        
+                        print("need to place put order for strike:", straddle_put_strike_, "short_put_option_contract_to_open:", short_put_option_contract_to_open, "straddle_put_price:", straddle_put_price, "state_seq_id:", self.state_seq_id)
+                        self.log_file_handle.write("need to place put order for strike:" + str(straddle_put_strike_) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "straddle_put_price:" + str(straddle_put_price) + "state_seq_id:" + str(self.state_seq_id) + "\n")
+                        
+                        place_put_order = True
 
                 self.place_short_straddle_option_to_open_orders(testapp, straddle_put_strike_, straddle_call_strike_, short_put_option_contract_to_open, short_call_option_contract_to_open, place_put_order, place_call_order)
 
@@ -3414,7 +3419,11 @@ class ESDynamicStraddleStrategy(Object):
                 straddle_call_strike_ = 0
                 straddle_put_strike_ = 0
                 short_call_option_contract_to_open = Contract()
-                short_put_option_contract_to_open = Contract()                  
+                short_put_option_contract_to_open = Contract()
+
+                straddle_strike_ = lastESPrice_    
+                straddle_call_strike_ = lastESPrice_ - self.straddle_call_itm_offset
+                straddle_put_strike_ = lastESPrice_ + self.straddle_put_itm_offset        
 
                 quotes_available = self.ES_FOP_quote_bid_call.get(straddle_call_strike_, None) is not None and self.ES_FOP_quote_bid_call_time[straddle_call_strike_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
                                     and self.ES_FOP_quote_ask_call.get(straddle_call_strike_, None) is not None and self.ES_FOP_quote_ask_call_time[straddle_call_strike_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
@@ -3424,41 +3433,41 @@ class ESDynamicStraddleStrategy(Object):
                                     and self.ES_FOP_quote_ask_call.get(straddle_strike_, None) is not None and self.ES_FOP_quote_ask_call_time[straddle_strike_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
                                     and self.ES_FOP_quote_bid_put.get(straddle_strike_, None) is not None and self.ES_FOP_quote_bid_put_time[straddle_strike_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit) \
                                     and self.ES_FOP_quote_ask_put.get(straddle_strike_, None) is not None and self.ES_FOP_quote_ask_put_time[straddle_strike_] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit)
-                straddle_call_strike_ = lastESPrice_ - self.straddle_call_itm_offset
-                straddle_put_strike_ = lastESPrice_ + self.straddle_put_itm_offset
-                        
+                       
                 #place a straddle order by individually placing a call and put order OCO groups with the same strike price as current strike price
-                if self.short_call_option_positions.get(straddle_call_strike_, 0) == 0 and quotes_available:
-                    short_call_option_contract_to_open.symbol = "ES"
-                    short_call_option_contract_to_open.secType = "FOP"
-                    short_call_option_contract_to_open.exchange = "CME"
-                    short_call_option_contract_to_open.currency = "USD"
-                    short_call_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
-                    short_call_option_contract_to_open.strike = straddle_call_strike_
-                    short_call_option_contract_to_open.right = "C"
-                    short_call_option_contract_to_open.multiplier = self.es_contract_multiplier
+                if quotes_available:
                     bid_price = self.ES_FOP_quote_bid_call[straddle_call_strike_]
                     ask_price = self.ES_FOP_quote_ask_call[straddle_call_strike_]
-                    straddle_call_price = (bid_price + ask_price)/2
-                    print("need to place call order for strike:", straddle_put_strike_, "short_call_option_contract_to_open:", short_call_option_contract_to_open, "straddle_call_price:", straddle_call_price, "state_seq_id:", self.state_seq_id)
-                    self.log_file_handle.write("need to place call order for strike:" + str(straddle_call_strike_) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "straddle_call_price:" + str(straddle_call_price) + "state_seq_id:" + str(self.state_seq_id) + "\n")
-                    place_call_order = True
+                    straddle_call_price = (bid_price + ask_price)/2    
+                    if self.short_call_option_positions.get(straddle_call_strike_, 0) == 0:
+                        short_call_option_contract_to_open.symbol = "ES"
+                        short_call_option_contract_to_open.secType = "FOP"
+                        short_call_option_contract_to_open.exchange = "CME"
+                        short_call_option_contract_to_open.currency = "USD"
+                        short_call_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
+                        short_call_option_contract_to_open.strike = straddle_call_strike_
+                        short_call_option_contract_to_open.right = "C"
+                        short_call_option_contract_to_open.multiplier = self.es_contract_multiplier
+                        print("need to place call order for strike:", straddle_put_strike_, "short_call_option_contract_to_open:", short_call_option_contract_to_open, "straddle_call_price:", straddle_call_price, "state_seq_id:", self.state_seq_id)
+                        self.log_file_handle.write("need to place call order for strike:" + str(straddle_call_strike_) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "straddle_call_price:" + str(straddle_call_price) + "state_seq_id:" + str(self.state_seq_id) + "\n")
+                        place_call_order = True
 
-                if self.short_put_option_positions.get(straddle_put_strike_, 0) == 0 and quotes_available:
-                    short_put_option_contract_to_open.symbol = "ES"
-                    short_put_option_contract_to_open.secType = "FOP"
-                    short_put_option_contract_to_open.exchange = "CME"
-                    short_put_option_contract_to_open.currency = "USD"
-                    short_put_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
-                    short_put_option_contract_to_open.strike = straddle_put_strike_
-                    short_put_option_contract_to_open.right = "P"
-                    short_put_option_contract_to_open.multiplier = self.es_contract_multiplier
+                if quotes_available:
                     bid_price = self.ES_FOP_quote_bid_put[straddle_put_strike_]
                     ask_price = self.ES_FOP_quote_ask_put[straddle_put_strike_]
                     straddle_put_price = (bid_price + ask_price)/2
-                    print("need to place put order for strike:", straddle_put_strike_, "short_put_option_contract_to_open:", short_put_option_contract_to_open, "straddle_put_price:", straddle_put_price, "state_seq_id:", self.state_seq_id)
-                    self.log_file_handle.write("need to place put order for strike:" + str(straddle_put_strike_) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "straddle_put_price:" + str(straddle_put_price) + "state_seq_id:" + str(self.state_seq_id) + "\n")
-                    place_put_order = True
+                    if self.short_put_option_positions.get(straddle_put_strike_, 0) == 0:
+                        short_put_option_contract_to_open.symbol = "ES"
+                        short_put_option_contract_to_open.secType = "FOP"
+                        short_put_option_contract_to_open.exchange = "CME"
+                        short_put_option_contract_to_open.currency = "USD"
+                        short_put_option_contract_to_open.lastTradeDateOrContractMonth = self.OptionTradeDate
+                        short_put_option_contract_to_open.strike = straddle_put_strike_
+                        short_put_option_contract_to_open.right = "P"
+                        short_put_option_contract_to_open.multiplier = self.es_contract_multiplier
+                        print("need to place put order for strike:", straddle_put_strike_, "short_put_option_contract_to_open:", short_put_option_contract_to_open, "straddle_put_price:", straddle_put_price, "state_seq_id:", self.state_seq_id)
+                        self.log_file_handle.write("need to place put order for strike:" + str(straddle_put_strike_) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "straddle_put_price:" + str(straddle_put_price) + "state_seq_id:" + str(self.state_seq_id) + "\n")
+                        place_put_order = True
                 
                 self.place_short_straddle_option_to_open_orders(testapp, straddle_put_strike_, straddle_call_strike_, short_put_option_contract_to_open, short_call_option_contract_to_open, place_put_order, place_call_order)
 
