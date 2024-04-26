@@ -2765,7 +2765,7 @@ class ESDynamicStraddleStrategy(Object):
             if stplmt_profit_active:
                 order_id, contract, order, order_state = self.call_stplmt_profit_open_orders_tuples[strike]
                 strike_call_bracket_order_profit_quantity = strike_call_bracket_order_profit_quantity + order.totalQuantity
-            if position != 0 and strike_call_bracket_order_profit_quantity is not None and -position > strike_call_bracket_order_stplmt_quantity:
+            if position < 0 and strike_call_bracket_order_profit_quantity is not None and -position > strike_call_bracket_order_stplmt_quantity:
                 needed_quantity = -position - strike_call_bracket_order_stplmt_quantity
                 #create a bracket order for this position
                 position_price =  self.short_call_option_avgcost[strike]/self.es_contract_multiplier
@@ -2815,7 +2815,8 @@ class ESDynamicStraddleStrategy(Object):
                 call_profit_order.triggerMethod = 1
                 call_stop_order.triggerMethod = 1
                 call_bracket_OCA_orders = [call_profit_order, call_stop_order]
-                OrderSamples.OneCancelsAll("AttachBracketCallOCO_"+str(testapp.nextValidOrderId), call_bracket_OCA_orders, 2)
+                oco_tag_ = "AttachBracketCallOCO_" + str(self.OptionTradeDate) + "_" + str(strike)
+                OrderSamples.OneCancelsAll(str(strike), call_bracket_OCA_orders, 2)
                 for o in call_bracket_OCA_orders:
                     o.account = self.place_orders_to_account
                     testapp.placeOrder(testapp.nextValidOrderId, call_contract, o)
@@ -2828,7 +2829,7 @@ class ESDynamicStraddleStrategy(Object):
                 self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
                 self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
                 self.call_bracket_order_maintenance_on_hold = True
-            elif strike_call_bracket_order_stplmt_quantity is not None and -position < strike_call_bracket_order_stplmt_quantity:
+            elif position < 0 and strike_call_bracket_order_stplmt_quantity is not None and -position < strike_call_bracket_order_stplmt_quantity:
                 needed_quantity = strike_call_bracket_order_stplmt_quantity + position
                 #cancel the extra bracket order
                 self.cancelpendingstplmtorder(testapp, strike, "C")
@@ -2840,7 +2841,7 @@ class ESDynamicStraddleStrategy(Object):
                 self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
                 self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
                 self.call_bracket_order_maintenance_on_hold = True
-            elif position !=0 and strike_call_bracket_order_stplmt_quantity is not None and strike_call_bracket_order_profit_quantity is not None and -position == strike_call_bracket_order_stplmt_quantity:
+            elif position < 0 and strike_call_bracket_order_stplmt_quantity is not None and strike_call_bracket_order_profit_quantity is not None and -position == strike_call_bracket_order_stplmt_quantity:
                 #check that bracket order limit order and stop limit orders have same quantity
                 if strike_call_bracket_order_stplmt_quantity != strike_call_bracket_order_profit_quantity:
                     #cancel the extra bracket order
@@ -2919,7 +2920,7 @@ class ESDynamicStraddleStrategy(Object):
             if stplmt_profit_active:
                 order_id, contract, order, order_state = self.put_stplmt_profit_open_orders_tuples[strike]
                 strike_put_bracket_order_profit_quantity = strike_put_bracket_order_profit_quantity + order.totalQuantity
-            if position != 0 and strike_put_bracket_order_stplmt_quantity is not None and -position > strike_put_bracket_order_stplmt_quantity:
+            if position < 0 and strike_put_bracket_order_stplmt_quantity is not None and -position > strike_put_bracket_order_stplmt_quantity:
                 needed_quantity = -position - strike_put_bracket_order_stplmt_quantity
                 #create a bracket order for this position
                 position_price =  self.short_put_option_avgcost[strike]/self.es_contract_multiplier
@@ -2969,7 +2970,8 @@ class ESDynamicStraddleStrategy(Object):
                 put_profit_order.triggerMethod = 1
                 put_stop_order.triggerMethod = 1
                 put_bracket_OCA_orders = [put_profit_order, put_stop_order]
-                OrderSamples.OneCancelsAll("AttachBracketPutOCO_"+str(testapp.nextValidOrderId), put_bracket_OCA_orders, 2)
+                oco_tag_ = "AttachBracketPutOCO_" + str(self.OptionTradeDate) + "_" + str(strike)
+                OrderSamples.OneCancelsAll(str(oco_tag_), put_bracket_OCA_orders, 2)
                 for o in put_bracket_OCA_orders:
                     o.account = self.place_orders_to_account
                     testapp.placeOrder(testapp.nextValidOrderId, put_contract, o)
@@ -2983,7 +2985,7 @@ class ESDynamicStraddleStrategy(Object):
                 self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
                 self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
                 self.put_bracket_order_maintenance_on_hold = True
-            elif strike_put_bracket_order_stplmt_quantity is not None and -position < strike_put_bracket_order_stplmt_quantity:
+            elif position < 0 and strike_put_bracket_order_stplmt_quantity is not None and -position < strike_put_bracket_order_stplmt_quantity:
                 needed_quantity = strike_put_bracket_order_stplmt_quantity + position
                 #cancel the extra bracket order
                 self.cancelpendingstplmtorder(testapp, strike, "P")
@@ -2995,7 +2997,7 @@ class ESDynamicStraddleStrategy(Object):
                 self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
                 self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
                 self.put_bracket_order_maintenance_on_hold = True
-            elif position != 0 and strike_put_bracket_order_stplmt_quantity is not None and strike_put_bracket_order_profit_quantity is not None and -position == strike_put_bracket_order_stplmt_quantity:
+            elif position < 0 and strike_put_bracket_order_stplmt_quantity is not None and strike_put_bracket_order_profit_quantity is not None and -position == strike_put_bracket_order_stplmt_quantity:
                 #check that bracket order limit order and stop limit orders have same quantity
                 if strike_put_bracket_order_stplmt_quantity != strike_put_bracket_order_profit_quantity:
                     #cancel the extra bracket order
@@ -3235,7 +3237,8 @@ class ESDynamicStraddleStrategy(Object):
                                             short_call_option_OCA_order_to_close_tuple = (limit_price, short_call_option_to_close)
                                             short_call_option_OCA_order_to_close_tuples.append(short_call_option_OCA_order_to_close_tuple)
                                         short_call_option_OCA_orders_to_close = [o for _price, o in short_call_option_OCA_order_to_close_tuples]
-                                        OrderSamples.OneCancelsAll("UpCloseShortCallOCO_"+str(self.state_seq_id), short_call_option_OCA_orders_to_close, 2)
+                                        oco_tag_ = "UpCloseShortCallOCO_" + self.OptionTradeDate + "_" + str(strike)
+                                        OrderSamples.OneCancelsAll(str(oco_tag_), short_call_option_OCA_orders_to_close, 2)
                                         for _price, o in short_call_option_OCA_order_to_close_tuples:
                                             o.account = self.place_orders_to_account
                                             testapp.placeOrder(testapp.nextValidOrderId, short_call_option_contract_to_close, o)
@@ -3293,7 +3296,8 @@ class ESDynamicStraddleStrategy(Object):
                                             short_put_option_OCA_order_to_close_tuple = (limit_price, short_put_option_to_close)
                                             short_put_option_OCA_order_to_close_tuples.append(short_put_option_OCA_order_to_close_tuple)
                                         short_put_option_OCA_orders_to_close = [o for _price, o in short_put_option_OCA_order_to_close_tuples]
-                                        OrderSamples.OneCancelsAll("UpCloseShortPutOCO_"+str(self.state_seq_id), short_put_option_OCA_orders_to_close, 2)
+                                        oco_tag_ = "UpCloseShortPutOCO_" + self.OptionTradeDate + "_" + str(strike)
+                                        OrderSamples.OneCancelsAll(str(oco_tag_), short_put_option_OCA_orders_to_close, 2)
                                         for _price, o in short_put_option_OCA_order_to_close_tuples:
                                             o.account = self.place_orders_to_account
                                             testapp.placeOrder(testapp.nextValidOrderId, short_put_option_contract_to_close, o)
@@ -3338,7 +3342,8 @@ class ESDynamicStraddleStrategy(Object):
                             up_call_buy_order_tuple = (lastESPrice_ + offset, up_call_buy_order)
                             up_call_buy_OCA_order_tuples.append(up_call_buy_order_tuple)
                         up_call_buy_OCA_orders = [o for _strike, o in up_call_buy_OCA_order_tuples]
-                        OrderSamples.OneCancelsAll("UpCallBuyWingOCO_"+str(self.state_seq_id), up_call_buy_OCA_orders, 2)
+                        oco_tag_ = "UpCallBuyWingOCO_" + self.OptionTradeDate
+                        OrderSamples.OneCancelsAll(str(oco_tag_), up_call_buy_OCA_orders, 2)
                         for _strike, o in up_call_buy_OCA_order_tuples:
                             up_call_buy_option_contract = Contract()
                             up_call_buy_option_contract.symbol = "ES"
@@ -3392,7 +3397,8 @@ class ESDynamicStraddleStrategy(Object):
                             up_put_buy_order_tuple = (lastESPrice_ - offset, up_put_buy_order)
                             up_put_buy_OCA_order_tuples.append(up_put_buy_order_tuple)
                         up_put_buy_OCA_orders = [o for _strike, o in up_put_buy_OCA_order_tuples]
-                        OrderSamples.OneCancelsAll("UpPutBuyWingOCO_"+str(self.state_seq_id), up_put_buy_OCA_orders, 2)
+                        oco_tag_ = "UpPutBuyWingOCO_" + self.OptionTradeDate
+                        OrderSamples.OneCancelsAll(str(oco_tag_), up_put_buy_OCA_orders, 2)
                         for _strike, o in up_put_buy_OCA_order_tuples:
                             up_put_buy_option_contract = Contract()
                             up_put_buy_option_contract.symbol = "ES"
@@ -3549,7 +3555,8 @@ class ESDynamicStraddleStrategy(Object):
                                             short_call_option_OCA_order_to_close_tuple = (limit_price, short_call_option_to_close)
                                             short_call_option_OCA_order_to_close_tuples.append(short_call_option_OCA_order_to_close_tuple)
                                         short_call_option_OCA_orders_to_close = [o for _price, o in short_call_option_OCA_order_to_close_tuples]
-                                        OrderSamples.OneCancelsAll("DownCloseShortCallOCO_"+str(self.state_seq_id), short_call_option_OCA_orders_to_close, 2)
+                                        oco_tag_ = "DownCloseShortCallOCO_" + self.OptionTradeDate + "_" + str(strike)
+                                        OrderSamples.OneCancelsAll(str(oco_tag_), short_call_option_OCA_orders_to_close, 2)
                                         for _price, o in short_call_option_OCA_order_to_close_tuples:
                                             o.account = self.place_orders_to_account
                                             o.outsideRth = True
@@ -3606,7 +3613,8 @@ class ESDynamicStraddleStrategy(Object):
                                             short_put_option_OCA_order_to_close_tuple = (limit_price, short_put_option_to_close)
                                             short_put_option_OCA_order_to_close_tuples.append(short_put_option_OCA_order_to_close_tuple)
                                         short_put_option_OCA_orders_to_close = [o for _price, o in short_put_option_OCA_order_to_close_tuples]
-                                        OrderSamples.OneCancelsAll("DownCloseShortPutOCO_"+str(self.state_seq_id), short_put_option_OCA_orders_to_close, 2)
+                                        oco_tag_ = "DownCloseShortPutOCO_" + self.OptionTradeDate + "_" + str(strike)
+                                        OrderSamples.OneCancelsAll(str(oco_tag_), short_put_option_OCA_orders_to_close, 2)
                                         for _price, o in short_put_option_OCA_order_to_close_tuples:
                                             o.account = self.place_orders_to_account
                                             o.outsideRth = True
@@ -3653,7 +3661,8 @@ class ESDynamicStraddleStrategy(Object):
                             down_call_buy_order_tuple = (lastESPrice_ + offset, down_call_buy_order)
                             down_call_buy_OCA_order_tuples.append(down_call_buy_order_tuple)
                         down_call_buy_OCA_orders = [o for _strike, o in down_call_buy_OCA_order_tuples]
-                        OrderSamples.OneCancelsAll("DownCallBuyWingOCO_"+str(self.state_seq_id), down_call_buy_OCA_orders, 2)
+                        oco_tag_ = "DownCallBuyWingOCO_" + self.OptionTradeDate
+                        OrderSamples.OneCancelsAll(str(oco_tag_), down_call_buy_OCA_orders, 2)
                         for _strike, o in down_call_buy_OCA_order_tuples:
                             down_call_buy_option_contract = Contract()
                             down_call_buy_option_contract.symbol = "ES"
@@ -3706,7 +3715,8 @@ class ESDynamicStraddleStrategy(Object):
                             down_put_buy_order_tuple = (lastESPrice_ - offset, down_put_buy_order)
                             down_put_buy_OCA_order_tuples.append(down_put_buy_order_tuple)
                         down_put_buy_OCA_orders = [o for _strike, o in down_put_buy_OCA_order_tuples]
-                        OrderSamples.OneCancelsAll("DownPutBuyWingOCO_"+str(self.state_seq_id), down_put_buy_OCA_orders, 2)
+                        oco_tag_ = "DownPutBuyWingOCO_" + self.OptionTradeDate
+                        OrderSamples.OneCancelsAll(oco_tag_, down_put_buy_OCA_orders, 2)
                         for _strike, o in down_put_buy_OCA_order_tuples:
                             down_put_buy_option_contract = Contract()
                             down_put_buy_option_contract.symbol = "ES"
@@ -3800,7 +3810,8 @@ class ESDynamicStraddleStrategy(Object):
                         short_put_option_bracket_order_tuple = (short_put_option_to_open_profit_order, short_put_option_to_open_loss_order)
                         short_put_option_bracket_order_tuples.append(short_put_option_bracket_order_tuple)
                 short_put_option_OCA_orders_to_open = [o for _price, o in short_put_option_OCA_order_to_open_tuples]
-                OrderSamples.OneCancelsAll("UpShortPutOCO_"+str(testapp.nextValidOrderId), short_put_option_OCA_orders_to_open, 2)
+                oco_tag_ = "UpShortPutOCO_" + self.OptionTradeDate + "_" + str(straddle_put_strike_)
+                OrderSamples.OneCancelsAll(str(oco_tag_), short_put_option_OCA_orders_to_open, 2)
                 for _price, o in short_put_option_OCA_order_to_open_tuples:
                     o.account = self.place_orders_to_account
                     o.outsideRth = True
@@ -3885,7 +3896,8 @@ class ESDynamicStraddleStrategy(Object):
                         short_call_option_bracket_order_tuple = (short_call_option_to_open_profit_order, short_call_option_to_open_loss_order)
                         short_call_option_bracket_order_tuples.append(short_call_option_bracket_order_tuple)
                 short_call_option_OCA_orders_to_open = [o for _price, o in short_call_option_OCA_order_to_open_tuples]
-                OrderSamples.OneCancelsAll("UpShortCallOCO_"+str(testapp.nextValidOrderId), short_call_option_OCA_orders_to_open, 2)
+                oco_tag_ = "UpShortCallOCO_" + self.OptionTradeDate + "_" + str(straddle_call_strike_)
+                OrderSamples.OneCancelsAll(str(oco_tag_), short_call_option_OCA_orders_to_open, 2)
                 for _price, o in short_call_option_OCA_order_to_open_tuples:
                     o.account = self.place_orders_to_account
                     o.outsideRth = True
@@ -3976,7 +3988,8 @@ class ESDynamicStraddleStrategy(Object):
                         short_put_option_bracket_order_tuple = (short_put_option_to_open_profit_order, short_put_option_to_open_loss_order)
                         short_put_option_bracket_order_tuples.append(short_put_option_bracket_order_tuple)
                 short_put_option_OCA_orders_to_open = [o for _price, o in short_put_option_OCA_order_to_open_tuples]
-                OrderSamples.OneCancelsAll("ShortStraddlePutOCO_"+str(self.state_seq_id), short_put_option_OCA_orders_to_open, 2)
+                oco_tag_ = "ShortStraddlePutOCO_" + self.OptionTradeDate + "_" + str(straddle_put_strike_)
+                OrderSamples.OneCancelsAll(str(oco_tag_), short_put_option_OCA_orders_to_open, 2)
                 
             else:
                 print("skip placing put order for strike:", straddle_put_strike_, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
@@ -4034,7 +4047,8 @@ class ESDynamicStraddleStrategy(Object):
                         short_call_option_bracket_order_tuple = (short_call_option_to_open_profit_order, short_call_option_to_open_loss_order)
                         short_call_option_bracket_order_tuples.append(short_call_option_bracket_order_tuple)
                 short_call_option_OCA_orders_to_open = [o for _price, o in short_call_option_OCA_order_to_open_tuples]
-                OrderSamples.OneCancelsAll("ShortStraddleCallOCO_"+str(self.state_seq_id), short_call_option_OCA_orders_to_open, 2)  
+                oco_tag_ = "ShortStraddleCallOCO_" + self.OptionTradeDate + "_" + str(straddle_call_strike_)
+                OrderSamples.OneCancelsAll(str(oco_tag_), short_call_option_OCA_orders_to_open, 2)
             else:
                 print("skip placing call order for strike:", straddle_call_strike_, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
                 self.log_file_handle.write("skip placing call order for strike:" + str(straddle_call_strike_) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
