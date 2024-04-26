@@ -349,12 +349,19 @@ class TestApp(TestWrapper, TestClient):
             print("Executing requests ... finished")
 
     def keyboardInterrupt(self):
-        self.nKeybInt += 1
-        if self.nKeybInt == 1:
-            self.stop()
-        else:
-            print("Finishing test")
-            self.done = True
+        current_time = datetime.datetime.now(datetime.timezone.utc)
+        #raise KeyboardInterrupt
+        print("Keyboard interrupt at", current_time)
+        #write ESDynamicStraddleStrategy log file
+        self.ESDynamicStraddleStrategy.log_file_handle.write("Keyboard interrupt at %s\n" % current_time)
+        raise KeyboardInterrupt
+
+        #self.nKeybInt += 1
+        #if self.nKeybInt == 1:
+        #    self.stop()
+        #else:
+        #    print("Finishing test")
+        #    self.done = True
 
     def stop(self):
         print("Executing cancels")
@@ -2438,7 +2445,7 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240426"
+        self.OptionTradeDate = "20240429"
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
