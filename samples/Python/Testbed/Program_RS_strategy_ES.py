@@ -3365,7 +3365,7 @@ class ESDynamicStraddleStrategy(Object):
                             up_call_buy_order_tuple = (lastESPrice_ + offset, up_call_buy_order)
                             up_call_buy_OCA_order_tuples.append(up_call_buy_order_tuple)
                         up_call_buy_OCA_orders = [o for _strike, o in up_call_buy_OCA_order_tuples]
-                        oco_tag_ = "UpCallBuyWingOCO_" + self.OptionTradeDate
+                        oco_tag_ = "UpCallBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(str(oco_tag_), up_call_buy_OCA_orders, 2)
                         for _strike, o in up_call_buy_OCA_order_tuples:
                             up_call_buy_option_contract = Contract()
@@ -3420,7 +3420,7 @@ class ESDynamicStraddleStrategy(Object):
                             up_put_buy_order_tuple = (lastESPrice_ - offset, up_put_buy_order)
                             up_put_buy_OCA_order_tuples.append(up_put_buy_order_tuple)
                         up_put_buy_OCA_orders = [o for _strike, o in up_put_buy_OCA_order_tuples]
-                        oco_tag_ = "UpPutBuyWingOCO_" + self.OptionTradeDate
+                        oco_tag_ = "UpPutBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(str(oco_tag_), up_put_buy_OCA_orders, 2)
                         for _strike, o in up_put_buy_OCA_order_tuples:
                             up_put_buy_option_contract = Contract()
@@ -3684,7 +3684,7 @@ class ESDynamicStraddleStrategy(Object):
                             down_call_buy_order_tuple = (lastESPrice_ + offset, down_call_buy_order)
                             down_call_buy_OCA_order_tuples.append(down_call_buy_order_tuple)
                         down_call_buy_OCA_orders = [o for _strike, o in down_call_buy_OCA_order_tuples]
-                        oco_tag_ = "DownCallBuyWingOCO_" + self.OptionTradeDate
+                        oco_tag_ = "DownCallBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(str(oco_tag_), down_call_buy_OCA_orders, 2)
                         for _strike, o in down_call_buy_OCA_order_tuples:
                             down_call_buy_option_contract = Contract()
@@ -3738,7 +3738,7 @@ class ESDynamicStraddleStrategy(Object):
                             down_put_buy_order_tuple = (lastESPrice_ - offset, down_put_buy_order)
                             down_put_buy_OCA_order_tuples.append(down_put_buy_order_tuple)
                         down_put_buy_OCA_orders = [o for _strike, o in down_put_buy_OCA_order_tuples]
-                        oco_tag_ = "DownPutBuyWingOCO_" + self.OptionTradeDate
+                        oco_tag_ = "DownPutBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(oco_tag_, down_put_buy_OCA_orders, 2)
                         for _strike, o in down_put_buy_OCA_order_tuples:
                             down_put_buy_option_contract = Contract()
