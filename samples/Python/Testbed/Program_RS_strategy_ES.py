@@ -3307,15 +3307,15 @@ class ESDynamicStraddleStrategy(Object):
                                         print("skip closing short put position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread, "state_seq_id:", self.state_seq_id, "time:", current_time, "spread_ok_for_trade:", spread_ok_for_trade)
                                         self.log_file_handle.write("skip closing short put position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "spread_ok_for_trade:" + str(spread_ok_for_trade) + "\n")
                 if straddle_range > 0 and quotes_available:                
-                    up_call_buy_order_needed  = True
+                    up_call_buy_order_needed  = False
                     total_long_call_positions = 0
                     total_short_call_positions = 0
                     for strike, position in self.long_call_option_positions.items():
                         total_long_call_positions += position
                     for strike, position in self.short_call_option_positions.items():
                         total_short_call_positions += -position
-                    if (total_long_call_positions == 0 and total_short_call_positions == 0) or (total_long_call_positions - total_short_call_positions > self.hedge_position_allowance):
-                        up_call_buy_order_needed = False
+                    if (total_long_call_positions == 0 and total_short_call_positions == 0) or (total_long_call_positions - total_short_call_positions <= self.hedge_position_allowance):
+                        up_call_buy_order_needed = True
 
                     print("total_long_call_positions:", total_long_call_positions, "total_short_call_positions:", total_short_call_positions, "up_call_buy_order_needed:", up_call_buy_order_needed, "state_seq_id:", self.state_seq_id)
                     self.log_file_handle.write("total_long_call_positions:" + str(total_long_call_positions) + "total_short_call_positions:" + str(total_short_call_positions) + "up_call_buy_order_needed:" + str(up_call_buy_order_needed) + "state_seq_id:" + str(self.state_seq_id) + "\n")
@@ -3360,15 +3360,15 @@ class ESDynamicStraddleStrategy(Object):
                             time.sleep(self.intra_order_sleep_time_ms/1000)
                         
                 if straddle_range > 0 and quotes_available:
-                    up_put_buy_order_needed  = True
+                    up_put_buy_order_needed  = False
                     total_long_put_positions = 0
                     total_short_put_positions = 0
                     for strike, position in self.long_put_option_positions.items():
                         total_long_put_positions += position
                     for strike, position in self.short_put_option_positions.items():
                         total_short_put_positions += -position
-                    if (total_long_put_positions == 0 and total_short_put_positions == 0) or (total_long_put_positions - total_short_put_positions > 5):
-                        up_put_buy_order_needed = False
+                    if (total_long_put_positions == 0 and total_short_put_positions == 0) or (total_long_put_positions - total_short_put_positions <= self.hedge_position_allowance):
+                        up_put_buy_order_needed = True
                     print("total_long_put_positions:", total_long_put_positions, "total_short_put_positions:", total_short_put_positions, "up_put_buy_order_needed:", up_put_buy_order_needed, "state_seq_id:", self.state_seq_id)
                     self.log_file_handle.write("total_long_put_positions:" + str(total_long_put_positions) + "total_short_put_positions:" + str(total_short_put_positions) + "up_put_buy_order_needed:" + str(up_put_buy_order_needed) + "state_seq_id:" + str(self.state_seq_id) + "\n")
                     
@@ -3621,15 +3621,15 @@ class ESDynamicStraddleStrategy(Object):
                                         print("skip closing short put position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread, "state_seq_id:", self.state_seq_id, "current_time:", current_time)
                                         self.log_file_handle.write("skip closing short put position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "state_seq_id:" + str(self.state_seq_id) + "current_time:" + str(current_time) + "\n")
                 if straddle_range > 0 and quotes_available:                    
-                    down_call_buy_order_needed  = True
+                    down_call_buy_order_needed  = False
                     total_long_call_positions = 0
                     total_short_call_positions = 0
                     for strike, position in self.long_call_option_positions.items():
                         total_long_call_positions += position
                     for strike, position in self.short_call_option_positions.items():
                         total_short_call_positions += -position
-                    if (total_long_call_positions == 0 and total_short_call_positions == 0) or (total_long_call_positions - total_short_call_positions > self.hedge_position_allowance):
-                        down_call_buy_order_needed = False
+                    if (total_long_call_positions == 0 and total_short_call_positions == 0) or (total_long_call_positions - total_short_call_positions <= self.hedge_position_allowance):
+                        down_call_buy_order_needed = True
                     print("total_long_call_positions:", total_long_call_positions, "total_short_call_positions:", total_short_call_positions, "down_call_buy_order_needed:", down_call_buy_order_needed, "state_seq_id:", self.state_seq_id)
                     self.log_file_handle.write("total_long_call_positions:" + str(total_long_call_positions) + "total_short_call_positions:" + str(total_short_call_positions) + "down_call_buy_order_needed:" + str(down_call_buy_order_needed) + "state_seq_id:" + str(self.state_seq_id) + "\n")
 
@@ -3675,15 +3675,15 @@ class ESDynamicStraddleStrategy(Object):
                             time.sleep(self.intra_order_sleep_time_ms/1000)
 
                 if straddle_range > 0 and quotes_available:
-                    down_put_buy_order_needed  = True
+                    down_put_buy_order_needed  = False
                     total_long_put_positions = 0
                     total_short_put_positions = 0
                     for strike, position in self.long_put_option_positions.items():
                         total_long_put_positions += position
                     for strike, position in self.short_put_option_positions.items():
                         total_short_put_positions += -position
-                    if (total_long_put_positions == 0 and total_short_put_positions == 0) or (total_long_put_positions - total_short_put_positions > 5):
-                        down_put_buy_order_needed = False
+                    if (total_long_put_positions == 0 and total_short_put_positions == 0) or (total_long_put_positions - total_short_put_positions <= self.hedge_position_allowance):
+                        down_put_buy_order_needed = True
                     print("total_long_put_positions:", total_long_put_positions, "total_short_put_positions:", total_short_put_positions, "down_put_buy_order_needed:", down_put_buy_order_needed)
                     self.log_file_handle.write("total_long_put_positions:" + str(total_long_put_positions) + "total_short_put_positions:" + str(total_short_put_positions) + "down_put_buy_order_needed:" + str(down_put_buy_order_needed) + "\n")
                     
