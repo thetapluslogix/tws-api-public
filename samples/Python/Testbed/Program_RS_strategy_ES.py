@@ -324,9 +324,9 @@ class TestApp(TestWrapper, TestClient):
 
             #get a new reqId
             reqId = self.nextOrderId()
-            self.ESDynamicStraddleStrategy.subscribeToMarketData(reqId,self)
+            self.ESDynamicStraddleStrategy.subscribeToMarketData(reqId)
             #subscribe for position updates
-            self.ESDynamicStraddleStrategy.subscribePositions(self)
+            self.ESDynamicStraddleStrategy.subscribePositions()
 
             #self.contractOperations_SPXW()
             
@@ -797,9 +797,9 @@ class TestApp(TestWrapper, TestClient):
     # ! [marketdatatype]
     def marketDataType(self, reqId: TickerId, marketDataType: int):
         super().marketDataType(reqId, marketDataType)
-        print("MarketDataType. ReqId:", reqId, "Type:", marketDataType)
+        #print("MarketDataType. ReqId:", reqId, "Type:", marketDataType)
         #write ESDynamicStraddleStrategy log file
-        self.ESDynamicStraddleStrategy.log_file_handle.write("MarketDataType. ReqId: %s Type: %s\n" % (reqId, marketDataType))
+        #self.ESDynamicStraddleStrategy.log_file_handle.write("MarketDataType. ReqId: %s Type: %s\n" % (reqId, marketDataType))
     # ! [marketdatatype]
 
     @printWhenExecuting
@@ -932,13 +932,19 @@ class TestApp(TestWrapper, TestClient):
         if reqContract.secType == "FUT" and reqContract.symbol == "ES":
             #post price update to ESDynamicStraddleStrategy
             if tickType == TickTypeEnum.BID or tickType == TickTypeEnum.ASK or tickType == TickTypeEnum.LAST:
-                self.ESDynamicStraddleStrategy.updateESPrice(price,self)
+                #self.ESDynamicStraddleStrategy.updateESPrice(price,self)
+                #send to queue
+                self.message_from_ib_queue.put(("es_quote", tickType, price))
+                #start the queue processing chain with a dummy trigger
+                self.ESDynamicStraddleStrategy.process_messages_from_ib_queue()
                 #self.ESDynamicStraddleStrategy.lastESPrice = self.ESDynamicStraddleStrategy.currentESPrice
                 #self.ESDynamicStraddleStrategy.currentESPrice = price
         #FOP
         if reqContract.secType == "FOP":
             if tickType == TickTypeEnum.BID or tickType == TickTypeEnum.ASK:
-                self.ESDynamicStraddleStrategy.updateESFOPPrice(reqContract, tickType, price, attrib)
+                #self.ESDynamicStraddleStrategy.updateESFOPPrice(reqContract, tickType, price, attrib)
+                #write into queue
+                self.message_from_ib_queue.put(("fop_quote", reqContract, tickType, price, attrib))
                 
         if False and reqContract.secType == "OPT" and reqContract.symbol == "SPX":
             if tickType == TickTypeEnum.BID or tickType == TickTypeEnum.ASK:
@@ -1503,9 +1509,9 @@ class TestApp(TestWrapper, TestClient):
                     self.spxwPrices.append(spxwPrice(reqContract, tickType, optPrice, tickAttrib))
                     print("expiration:", reqContract.lastTradeDateOrContractMonth, "strike:", reqContract.strike, "right:", reqContract.right, "tickType:", tickType, "price:", floatMaxString(optPrice), "len(spxwPrices):", len(self.spxwPrices))
         #FOP
-        if reqContract.secType == "FOP":
-            if tickType == TickTypeEnum.BID or tickType == TickTypeEnum.ASK:
-                self.ESDynamicStraddleStrategy.updateESFOPPrice(reqContract, tickType, optPrice, tickAttrib)
+        #if reqContract.secType == "FOP":
+        #    if tickType == TickTypeEnum.BID or tickType == TickTypeEnum.ASK:
+        #        self.ESDynamicStraddleStrategy.updateESFOPPrice(reqContract, tickType, optPrice, tickAttrib)
 
     # ! [tickoptioncomputation]
 
@@ -1737,8 +1743,8 @@ class TestApp(TestWrapper, TestClient):
     def tickReqParams(self, tickerId:int, minTick:float,
                       bboExchange:str, snapshotPermissions:int):
         super().tickReqParams(tickerId, minTick, bboExchange, snapshotPermissions)
-        print("TickReqParams. TickerId:", tickerId, "MinTick:", floatMaxString(minTick),
-              "BboExchange:", bboExchange, "SnapshotPermissions:", intMaxString(snapshotPermissions))
+        #print("TickReqParams. TickerId:", tickerId, "MinTick:", floatMaxString(minTick),
+        #      "BboExchange:", bboExchange, "SnapshotPermissions:", intMaxString(snapshotPermissions))
     # ! [tickReqParams]
 
     @iswrapper
@@ -2531,23 +2537,23 @@ class ESDynamicStraddleStrategy(Object):
                 self.ES_FOP_quote_ask_put[reqContract.strike] = price
                 self.ES_FOP_quote_ask_put_time[reqContract.strike] = current_time
 
-    def subscribePositions(self, testapp : TestApp):
-        testapp.reqAccountUpdates(True, testapp.account)
-        testapp.reqPositions()
+    def subscribePositions(self):
+        self.testapp.reqAccountUpdates(True, self.testapp.account)
+        self.testapp.reqPositions()
 
 
-    def subscribeToMarketData(self, reqId, testapp : TestApp):
+    def subscribeToMarketData(self, reqId):
         #get new reqId
         #reqId = self.nextOrderId()
         print("subscribeToMarketData called with reqId:", reqId, "EScontract:", self.EScontract)
         self.log_file_handle.write("subscribeToMarketData called with reqId:" + str(reqId) + " EScontract:" + str(self.EScontract) + "\n")
-        testapp.MktDataRequest[reqId] = self.EScontract
-        testapp.reqMarketDataType(1)
-        testapp.reqMktData(reqId, self.EScontract, "", False, False, [])
+        self.testapp.MktDataRequest[reqId] = self.EScontract
+        self.testapp.reqMarketDataType(1)
+        self.testapp.reqMktData(reqId, self.EScontract, "", False, False, [])
 
-    def process_messages_from_ib_queue(self, testapp : TestApp):
-        while not testapp.message_from_ib_queue.empty():
-            msg = testapp.message_from_ib_queue.get()
+    def process_messages_from_ib_queue(self):
+        while not self.testapp.message_from_ib_queue.empty():
+            msg = self.testapp.message_from_ib_queue.get()
             #msg is a tuple with the first e`lement being the message type and the remaining elements being the message
             msg_type = msg[0]
             if msg_type == "position":
@@ -2647,61 +2653,76 @@ class ESDynamicStraddleStrategy(Object):
                 #print("open_order_end message received")
                 self.log_file_handle.write("open_order_end message received\n")
                 self.orders_can_start_trading = True
+            elif msg_type == "fop_quote":
+                reqContract = msg[1]
+                tickType = msg[2]
+                price = msg[3]
+                attrib = msg[4]
+                self.updateESFOPPrice(reqContract, tickType, price, attrib)
+            elif msg_type == "es_quote":
+                tickType = msg[1]
+                price = msg[2]
+                if tickType == TickTypeEnum.BID:
+                    self.updateESPrice(tickType, price)
+                current_time = datetime.datetime.now()
+                self.log_file_handle.write("ES quote received. tickType:" + str(tickType) + " price:" + str(price) + " time:" + str(current_time) + "\n")
+
             self.call_stplmt_open_orders_tuples_active = False
             self.put_stplmt_open_orders_tuples_active = False
             self.call_stplmt_profit_open_orders_tuples_active = False
             self.put_stplmt_profit_open_orders_tuples_active = False
+            
     
         #request currently open orders
-        testapp.reqAllOpenOrders()
+        self.testapp.reqAllOpenOrders()
         
         current_time = datetime.datetime.now()
         last_subscribe_time = current_time
         #re-subscribe to ES data if not receiving updates anymore for whatever reason
         if (current_time - self.last_heartbeat_time).total_seconds() > 60:
             if (current_time - last_subscribe_time).total_seconds() > 60:
-                req_id_resub = testapp.nextOrderId()
-                self.subscribeToMarketData(req_id_resub, testapp)
+                req_id_resub = self.testapp.nextOrderId()
+                self.subscribeToMarketData(req_id_resub)
                 last_subscribe_time = datetime.datetime.now()
                 print("re-subscribed to ES market data at time ", last_subscribe_time)
                 self.log_file_handle.write("re-subscribed to ES market data at time " + str(last_subscribe_time) + "\n")
 
-    def cancelpendingstplmtorder(self, testapp : TestApp, strike, right):
+    def cancelpendingstplmtorder(self, strike, right):
         #get current time in YYYYMMDD-HH:MM:SS format
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H:%M:%S")
         if right == "C":
             if strike in self.call_stplmt_open_orders_tuples:
                 stplmt_open_orders_tuples = self.call_stplmt_open_orders_tuples[strike]
                 order_id, contract, order, order_state = stplmt_open_orders_tuples
-                testapp.cancelOrder(order_id,current_time)
+                self.testapp.cancelOrder(order_id,current_time)
                     #remove the order from the list
                     #self.call_stplmt_open_orders_tuples[strike].remove(order_id, contract, order, order_state)
         else:
             if strike in self.put_stplmt_open_orders_tuples:
                 stplmt_open_orders_tuples = self.put_stplmt_open_orders_tuples[strike]
                 order_id, contract, order, order_state = stplmt_open_orders_tuples
-                testapp.cancelOrder(order_id, current_time)
+                self.testapp.cancelOrder(order_id, current_time)
                     #remove the order from the list
                     #self.put_stplmt_open_orders_tuples[strike].remove(order_id, contract, order, order_state)
-    def cancelpendingstplmtprofitorder(self, testapp : TestApp, strike, right):
+    def cancelpendingstplmtprofitorder(self, strike, right):
         #get current time in YYYYMMDD-HH:MM:SS format
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H:%M:%S")
         if right == "C":
             if strike in self.call_stplmt_profit_open_orders_tuples:
                 stplmt_profit_open_orders_tuples = self.call_stplmt_profit_open_orders_tuples[strike]
                 order_id, contract, order, order_state = stplmt_profit_open_orders_tuples
-                testapp.cancelOrder(order_id,current_time)
+                self.testapp.cancelOrder(order_id,current_time)
                     #remove the order from the list
                     #self.call_stplmt_profit_open_orders_tuples[strike].remove(order_id, contract, order, order_state)
         else:
             if strike in self.put_stplmt_profit_open_orders_tuples:
                 stplmt_profit_open_orders_tuples = self.put_stplmt_profit_open_orders_tuples[strike]
                 order_id, contract, order, order_state = stplmt_profit_open_orders_tuples
-                testapp.cancelOrder(order_id, current_time)
+                self.testapp.cancelOrder(order_id, current_time)
                     #remove the order from the list
                     #self.put_stplmt_profit_open_orders_tuples[strike].remove(order_id, contract, order, order_state)
 
-    def sanity_check_and_maintenanace(self, testapp : TestApp, newESPrice):
+    def sanity_check_and_maintenanace(self, newESPrice):
         #return
         #this function enforces the following rules:
         #1. every position should have a bracket order in place
@@ -2819,8 +2840,8 @@ class ESDynamicStraddleStrategy(Object):
                 OrderSamples.OneCancelsAll(str(strike), call_bracket_OCA_orders, 2)
                 for o in call_bracket_OCA_orders:
                     o.account = self.place_orders_to_account
-                    testapp.placeOrder(testapp.nextValidOrderId, call_contract, o)
-                    testapp.nextValidOrderId += 1
+                    self.testapp.placeOrder(self.testapp.nextValidOrderId, call_contract, o)
+                    self.testapp.nextValidOrderId += 1
                 
                 print("position:", position, "strike_call_bracket_order_stplmt_quantity:", strike_call_bracket_order_stplmt_quantity, "needed_quantity:", needed_quantity)
                 self.log_file_handle.write("position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
@@ -2832,7 +2853,7 @@ class ESDynamicStraddleStrategy(Object):
             elif position < 0 and strike_call_bracket_order_stplmt_quantity is not None and -position < strike_call_bracket_order_stplmt_quantity:
                 needed_quantity = strike_call_bracket_order_stplmt_quantity + position
                 #cancel the extra bracket order
-                self.cancelpendingstplmtorder(testapp, strike, "C")
+                self.cancelpendingstplmtorder(strike, "C")
                 print("position:", position, "strike_call_bracket_order_stplmt_quantity:", strike_call_bracket_order_stplmt_quantity, "needed_quantity:", needed_quantity)
                 self.log_file_handle.write("position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
                 print("Too many bracket orders: cancelling call order for strike:", strike)
@@ -2845,8 +2866,8 @@ class ESDynamicStraddleStrategy(Object):
                 #check that bracket order limit order and stop limit orders have same quantity
                 if strike_call_bracket_order_stplmt_quantity != strike_call_bracket_order_profit_quantity:
                     #cancel the extra bracket order
-                    self.cancelpendingstplmtorder(testapp, strike, "C")
-                    self.cancelpendingstplmtprofitorder(testapp, strike, "C")
+                    self.cancelpendingstplmtorder(strike, "C")
+                    self.cancelpendingstplmtprofitorder(self.testapp, strike, "C")
                     print("strike", strike, "position:", position, "strike_call_bracket_order_stplmt_quantity:", strike_call_bracket_order_stplmt_quantity, "strike_call_bracket_order_profit_quantity:", strike_call_bracket_order_profit_quantity)
                     self.log_file_handle.write("strike", strike, "position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "strike_call_bracket_order_profit_quantity:" + str(strike_call_bracket_order_profit_quantity) + "\n")
                     print("Unequal bracket profit and stplmt legs: cancelling call profit and loss orders for strike:", strike)
@@ -2974,8 +2995,8 @@ class ESDynamicStraddleStrategy(Object):
                 OrderSamples.OneCancelsAll(str(oco_tag_), put_bracket_OCA_orders, 2)
                 for o in put_bracket_OCA_orders:
                     o.account = self.place_orders_to_account
-                    testapp.placeOrder(testapp.nextValidOrderId, put_contract, o)
-                    testapp.nextValidOrderId += 1
+                    self.testapp.placeOrder(self.testapp.nextValidOrderId, put_contract, o)
+                    self.testapp.nextValidOrderId += 1
                 
                 print("position:", position, "strike_put_bracket_order_stplmt_quantity:", strike_put_bracket_order_stplmt_quantity, "needed_quantity:", needed_quantity)
                 self.log_file_handle.write("position:" + str(position) + "strike_put_bracket_order_stplmt_quantity:" + str(strike_put_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
@@ -2988,7 +3009,7 @@ class ESDynamicStraddleStrategy(Object):
             elif position < 0 and strike_put_bracket_order_stplmt_quantity is not None and -position < strike_put_bracket_order_stplmt_quantity:
                 needed_quantity = strike_put_bracket_order_stplmt_quantity + position
                 #cancel the extra bracket order
-                self.cancelpendingstplmtorder(testapp, strike, "P")
+                self.cancelpendingstplmtorder(strike, "P")
                 print("position:", position, "strike_put_bracket_order_stplmt_quantity:", strike_put_bracket_order_stplmt_quantity, "needed_quantity:", needed_quantity)
                 self.log_file_handle.write("position:" + str(position) + "strike_put_bracket_order_stplmt_quantity:" + str(strike_put_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
                 print("Too many bracket orders: cancelling put order for strike:", strike)
@@ -3001,8 +3022,8 @@ class ESDynamicStraddleStrategy(Object):
                 #check that bracket order limit order and stop limit orders have same quantity
                 if strike_put_bracket_order_stplmt_quantity != strike_put_bracket_order_profit_quantity:
                     #cancel the extra bracket order
-                    self.cancelpendingstplmtorder(testapp, strike, "P")
-                    self.cancelpendingstplmtprofitorder(testapp, strike, "P")
+                    self.cancelpendingstplmtorder(strike, "P")
+                    self.cancelpendingstplmtprofitorder(self.testapp, strike, "P")
                     print("position:", position, "strike_put_bracket_order_stplmt_quantity:", strike_put_bracket_order_stplmt_quantity, "strike_put_bracket_order_profit_quantity:", strike_put_bracket_order_profit_quantity)
                     self.log_file_handle.write("position:" + str(position) + "strike_put_bracket_order_stplmt_quantity:" + str(strike_put_bracket_order_stplmt_quantity) + "strike_put_bracket_order_profit_quantity:" + str(strike_put_bracket_order_profit_quantity) + "\n")
                     print("Unequal bracket profit and stplmt legs: cancelling put profit and loss orders for strike:", strike)
@@ -3021,8 +3042,11 @@ class ESDynamicStraddleStrategy(Object):
         #time.sleep(1)
         
 
-    def updateESPrice(self, newESPrice, testapp : TestApp):
-        
+    def updateESPrice(self, tickType, newESPrice):
+        testapp = self.testapp
+        #process messages from the IB queue
+        self.process_messages_from_ib_queue()
+
         #request market data for surrounding ES FOP contracts
         current_time = datetime.datetime.now()
         self.last_heartbeat_time = current_time
@@ -3069,8 +3093,7 @@ class ESDynamicStraddleStrategy(Object):
                 testapp.MktDataRequest[reqId_put_sub] = put_contract
                 print("requesting market data for put_contract:", put_contract)
                 self.log_file_handle.write("requesting market data for put_contract:" + str(put_contract) + "\n")
-        #process messages from the IB queue
-        self.process_messages_from_ib_queue(testapp)
+        
 
         #("updateESPrice called with newESPrice:", newESPrice)
         if self.lastESPrice is None and self.currentESPrice is None:
@@ -3078,13 +3101,13 @@ class ESDynamicStraddleStrategy(Object):
             if floor(newESPrice) % 5 != 0:
                 current_time = datetime.datetime.now()
                 self.log_file_handle.write(f"waiting for floor(newESPrice) % 5 == 0: time {str(current_time)} price {newESPrice}\n")
-                self.sanity_check_and_maintenanace(testapp, newESPrice)
+                self.sanity_check_and_maintenanace(newESPrice)
                 return
             #wait until positions are updated
             if not self.positions_can_start_trading:
                 current_time = datetime.datetime.now()
                 self.log_file_handle.write(f"waiting for positions to be updated: time {str(current_time)} price {newESPrice}\n")
-                self.sanity_check_and_maintenanace(testapp, newESPrice)
+                self.sanity_check_and_maintenanace(newESPrice)
                 return
             
             print("setting lastESPrice and currentESPrice to floor(newESPrice):", floor(newESPrice))
@@ -3246,7 +3269,7 @@ class ESDynamicStraddleStrategy(Object):
                                             testapp.nextValidOrderId += 1
                                             self.log_file_handle.write("closing short call position for strike:" + str(strike) + "short_call_option_contract_to_close:" + str(short_call_option_contract_to_close) + "limit_price:" + str(_price) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                                             #caccel pending stop limit orders
-                                            self.cancelpendingstplmtorder(testapp, strike, "C")
+                                            self.cancelpendingstplmtorder(strike, "C")
                                             time.sleep(self.intra_order_sleep_time_ms/1000)
                                     else:
                                         print("skip closing short call position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread, "state_seq_id:", self.state_seq_id, "time:", current_time, "spread_ok_for_trade:", spread_ok_for_trade)
@@ -3305,7 +3328,7 @@ class ESDynamicStraddleStrategy(Object):
                                             testapp.nextValidOrderId += 1
                                             self.log_file_handle.write("closing short put position for strike:" + str(strike) + "short_put_option_contract_to_close:" + str(short_put_option_contract_to_close) + "limit_price:" + str(_price) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                                             #caccel pending stop limit orders
-                                            self.cancelpendingstplmtorder(testapp, strike, "P")
+                                            self.cancelpendingstplmtorder(strike, "P")
                                             time.sleep(self.intra_order_sleep_time_ms/1000)
                                     else:
                                         print("skip closing short put position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread, "state_seq_id:", self.state_seq_id, "time:", current_time, "spread_ok_for_trade:", spread_ok_for_trade)
@@ -3565,7 +3588,7 @@ class ESDynamicStraddleStrategy(Object):
                                             testapp.nextValidOrderId += 1
                                             self.log_file_handle.write("closing short call position for strike:" + str(strike) + "short_call_option_contract_to_close:" + str(short_call_option_contract_to_close) + "limit_price:" + str(_price) + "state_seq_id:" + str(self.state_seq_id) + "current_time:" + str(current_time) + "\n")
                                             #caccel pending stop limit orders
-                                            self.cancelpendingstplmtorder(testapp, strike, "C")
+                                            self.cancelpendingstplmtorder(strike, "C")
                                             time.sleep(self.intra_order_sleep_time_ms/1000)
                                     else:
                                         print("skip closing short call position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
@@ -3623,7 +3646,7 @@ class ESDynamicStraddleStrategy(Object):
                                             testapp.nextValidOrderId += 1
                                             self.log_file_handle.write("closing short put position for strike:" + str(strike) + "short_put_option_contract_to_close:" + str(short_put_option_contract_to_close) + "limit_price:" + str(_price) + "state_seq_id:" + str(self.state_seq_id) + "current_time:" + str(current_time) + "\n")
                                             #caccel pending stop limit orders
-                                            self.cancelpendingstplmtorder(testapp, strike, "P")
+                                            self.cancelpendingstplmtorder(strike, "P")
                                             time.sleep(self.intra_order_sleep_time_ms/1000)
                                     else:
                                         print("skip closing short put position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread, "state_seq_id:", self.state_seq_id, "current_time:", current_time)
@@ -3751,7 +3774,7 @@ class ESDynamicStraddleStrategy(Object):
                 print("ES price update:", self.currentESPrice, "last strike:", self.lastESPrice, "direction: no change", "current_time:", current_time, "state_seq_id:", self.state_seq_id)
                 self.log_file_handle.write("ES price update: " + str(self.currentESPrice) + " last strike: " + str(self.lastESPrice) + " direction: no change " + " current_time: " + str(current_time) + " state_seq_id: " + str(self.state_seq_id) + "\n")
        
-        self.sanity_check_and_maintenanace(testapp, newESPrice)
+        self.sanity_check_and_maintenanace(newESPrice)
 
     def place_short_put_option_to_open_orders(self, testapp, straddle_put_strike_, straddle_call_strike_, short_put_option_contract_to_open):
         short_put_option_OCA_order_to_open_tuples = []
@@ -4196,8 +4219,8 @@ def main():
     client_id = 0
     while alive:
         try:
-            if client_id > 0:
-                time.sleep(60)
+            #if client_id > 0:
+            #    time.sleep(60)
             app = TestApp()
             if args.global_cancel:
                 app.globalCancelOnly = True
@@ -4212,10 +4235,10 @@ def main():
                 app.ESDynamicStraddleStrategy.log_file_handle.write("serverVersion:" + str(app.serverVersion()) + " connectionTime:" + str(app.twsConnectionTime()) + " client_id:" + str(client_id) + "\n")
             
             #for next iteration if it happens
-            client_id += 1
-            if client_id > 31:
-                client_id = 0
-                time.sleep(60)
+            #client_id += 1
+            #if client_id > 31:
+            #    client_id = 0
+            time.sleep(2)
             #wait until connection is established
             waited_seconds = 0
             while not app.isConnected():
@@ -4275,10 +4298,9 @@ def main():
             #        app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
             #app.dumpTestCoverageSituation()
             #app.dumpReqAnsErrSituation()
-            #check whether api is still connected
-            api_connected = app.isConnected()
-            if api_connected:
-                app.disconnect()
+            
+            #apprently when socket is closed in lower layer, app.connected() can still return True, so don't check it
+            app.disconnect()
     
     print("stop_thread:", stop_thread)
     #stop the monitor thread
