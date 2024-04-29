@@ -3351,8 +3351,9 @@ class ESDynamicStraddleStrategy(Object):
                     self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                 
                 if straddle_range > 0 and quotes_available:
+                    av_straddle_range = floor(2*self.total_S/self.position_count) #straddle position size is half of position count
                     for strike, position in self.short_call_option_positions.items():
-                        if strike < lastESPrice_ - straddle_range:
+                        if strike < lastESPrice_ - max(straddle_range, av_straddle_range):
                             if position < 0:
                                 short_call_option_contract_to_close = Contract()
                                 short_call_option_contract_to_close.symbol = "ES"
@@ -3409,9 +3410,10 @@ class ESDynamicStraddleStrategy(Object):
                                         self.log_file_handle.write("skip closing short call position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "spread_ok_for_trade:" + str(spread_ok_for_trade) + "\n")
 
                 if straddle_range > 0 and quotes_available:
+                    av_straddle_range = floor(2*self.total_S/self.position_count) #straddle position size is half of position count
                     #close all short put positions with strike price greater than lastESPrice_
                     for strike, position in self.short_put_option_positions.items():
-                        if strike > lastESPrice_ + straddle_range:
+                        if strike > lastESPrice_ + max(straddle_range, av_straddle_range):
                             if position < 0:
                                 short_put_option_contract_to_close = Contract()
                                 short_put_option_contract_to_close.symbol = "ES"
@@ -3690,8 +3692,9 @@ class ESDynamicStraddleStrategy(Object):
                     self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
 
                 if straddle_range > 0 and quotes_available:
+                    av_straddle_range = floor(2*self.total_S/self.position_count) #straddle position size is half of position count
                     for strike, position in self.short_call_option_positions.items():
-                        if strike < lastESPrice_ - straddle_range:
+                        if strike < lastESPrice_ - max(straddle_range, av_straddle_range):
                             if position < 0:
                                 short_call_option_contract_to_close = Contract()
                                 short_call_option_contract_to_close.symbol = "ES"
@@ -3747,9 +3750,10 @@ class ESDynamicStraddleStrategy(Object):
                                         print("skip closing short call position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
                                         self.log_file_handle.write("skip closing short call position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
                 if straddle_range > 0 and quotes_available:
+                    av_straddle_range = floor(2*self.total_S/self.position_count) #straddle position size is half of position count
                     #close all short put positions with strike price greater than lastESPrice_
                     for strike, position in self.short_put_option_positions.items():
-                        if strike > lastESPrice_ + straddle_range:
+                        if strike > lastESPrice_ + max(straddle_range, av_straddle_range):
                             if position < 0:
                                 short_put_option_contract_to_close = Contract()
                                 short_put_option_contract_to_close.symbol = "ES"
