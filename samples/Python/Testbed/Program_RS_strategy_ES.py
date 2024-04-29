@@ -2471,7 +2471,7 @@ class ESDynamicStraddleStrategy(Object):
         self.log_file_handle.write("##############################################################################\n")
         self.log_file_handle.write("ESDynamicStraddleStrategy RS started at " + str(datetime.datetime.now()) + "\n")
         self.limit_price_slack_ticks = 2
-        self.hedge_outer_offset = 20
+        self.hedge_outer_offset = 50
         self.intra_order_sleep_time_ms = 500
         self.hedge_order_delay_multiplier = 2
         self.attach_bracket_order = True
@@ -3482,8 +3482,10 @@ class ESDynamicStraddleStrategy(Object):
                     if up_call_buy_order_needed:
                         #keep issuing up call buy OCO orders to buy a call for 0.50 limit price starting at strike price of currentESPrice + 20 and incrementing by 5 until the OCO order executes.
                         up_call_buy_OCA_order_tuples = []
-                        range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
-                        range_start = min(range_start, self.hedge_range_upper_strike)
+                        #range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
+                        #range_start = min(range_start, self.hedge_range_upper_strike)
+                        range_start = (self.range_upper_strike - self.range_lower_strike)/2 + 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                        range_start = floor(range_start) - floor(range_start) % 5
                         for offset in range(range_start, self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
                             if limit_price >= 10:
@@ -3537,8 +3539,10 @@ class ESDynamicStraddleStrategy(Object):
                     if up_put_buy_order_needed:
                         #keep issuing up call buy OCO orders to buy a put for 0.50 limit price starting at strike price of currentESPrice - 20 and decrementing by 5 until the OCO order executess.
                         up_put_buy_OCA_order_tuples = []
-                        range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
-                        range_start = max(range_start, self.hedge_range_lower_strike)
+                        #range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
+                        #range_start = max(range_start, self.hedge_range_lower_strike)
+                        range_start = (self.range_upper_strike - self.range_lower_strike)/2 - 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                        range_start = floor(range_start) - floor(range_start) % 5
                         for offset in range(range_start, self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
                             if limit_price >= 10:
@@ -3817,8 +3821,10 @@ class ESDynamicStraddleStrategy(Object):
                     if down_call_buy_order_needed:
                         #keep issuing down call buy OCO orders to buy a put for 0.50 limit price starting at strike price of currentESPrice + 20 and incrementing by 5 until the OCO order executes.
                         down_call_buy_OCA_order_tuples = []
-                        range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
-                        range_start = min(range_start, self.hedge_range_upper_strike)
+                        #range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
+                        #range_start = min(range_start, self.hedge_range_upper_strike)
+                        range_start = (self.range_upper_strike - self.range_lower_strike)/2 + 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                        range_start = floor(range_start) - floor(range_start) % 5
                         for offset in range(range_start, self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
                             if limit_price >= 10:
@@ -3872,8 +3878,10 @@ class ESDynamicStraddleStrategy(Object):
                     if down_put_buy_order_needed:
                         #keep issuing down put buy OCO orders to buy a put for 0.50 limit price starting at strike price of currentESPrice - 20 and decrementing by 5 until the OCO order executes.
                         down_put_buy_OCA_order_tuples = []
-                        range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
-                        range_start = max(range_start, self.hedge_range_lower_strike)
+                        #range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
+                        #range_start = max(range_start, self.hedge_range_lower_strike)
+                        range_start = (self.range_upper_strike - self.range_lower_strike)/2 - 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                        range_start = floor(range_start) - floor(range_start) % 5
                         for offset in range(range_start, self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
                             if limit_price >= 10:
