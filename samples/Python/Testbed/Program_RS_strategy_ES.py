@@ -2471,7 +2471,7 @@ class ESDynamicStraddleStrategy(Object):
         self.log_file_handle.write("##############################################################################\n")
         self.log_file_handle.write("ESDynamicStraddleStrategy RS started at " + str(datetime.datetime.now()) + "\n")
         self.limit_price_slack_ticks = 2
-        self.hedge_outer_offset = 50
+        self.hedge_outer_offset = 100
         self.intra_order_sleep_time_ms = 500
         self.hedge_order_delay_multiplier = 2
         self.attach_bracket_order = True
@@ -2492,11 +2492,11 @@ class ESDynamicStraddleStrategy(Object):
         self.profit_target_divisor = 20
         self.min_limit_profit = 4 #minimum 4 points profit given each strike move has friction of appx 3 points
         self.stop_loss_increment = 40 #this is dynamically adjusted based on the straddle range
-        self.stop_limit_increment = 10
+        self.stop_limit_increment = 2
         self.es_contract_multiplier = 50
         self.positions_can_start_trading = False
         self.orders_can_start_trading = False
-        self.rs_hedge_divisor = 15
+        self.rs_hedge_divisor = 20
         self.state_seq_id = 0 #increment upon entering a up or down direction state. All orders of same category (e.g. short call at straddle strike) will use this seq id as part of its OCO tag so that if order is placed multiple times while in current state (due to glitches), only one will execute
         #read state_seq_id from file
         self.last_heartbeat_time = datetime.datetime.now()
@@ -2537,7 +2537,7 @@ class ESDynamicStraddleStrategy(Object):
         self.hedge_position_count = 0
         self.hedge_range_lower_strike = 0
         self.hedge_range_upper_strike = 0
-            
+        self.hedge_start_sperpos_multiplier = 2    
         
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
@@ -3346,6 +3346,8 @@ class ESDynamicStraddleStrategy(Object):
                 straddle_range = straddle_call_price + straddle_put_price
                 if straddle_range > 0 and quotes_available:
                     self.stop_loss_increment = math.ceil(straddle_range)
+                    if self.position_count > 0:
+                        self.stop_limit_increment = math.ceil(2*self.total_S/self.position_count)
                     print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
                     self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                 else:
@@ -3354,7 +3356,7 @@ class ESDynamicStraddleStrategy(Object):
                 
                 if straddle_range > 0 and quotes_available:
                     if self.position_count > 0:
-                        av_straddle_range = straddle_range/self.position_count
+                        av_straddle_range = 2*self.total_S/self.position_count # av straddle range is 2*average S per leg
                     else:
                         av_straddle_range = straddle_range
 
@@ -3417,7 +3419,7 @@ class ESDynamicStraddleStrategy(Object):
 
                 if straddle_range > 0 and quotes_available:
                     if self.position_count > 0:
-                        av_straddle_range = straddle_range/self.position_count
+                        av_straddle_range = 2*self.total_S/self.position_count # av straddle range is 2*average S per leg
                     else:
                         av_straddle_range = straddle_range
 
@@ -3497,7 +3499,7 @@ class ESDynamicStraddleStrategy(Object):
                         range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
                         #range_start = min(range_start, self.hedge_range_upper_strike)
                         if self.position_count > 0:
-                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
@@ -3555,7 +3557,7 @@ class ESDynamicStraddleStrategy(Object):
                         range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
                         #range_start = max(range_start, self.hedge_range_lower_strike)
                         if self.position_count > 0:
-                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 - 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
@@ -3697,6 +3699,8 @@ class ESDynamicStraddleStrategy(Object):
                 
                 if straddle_range > 0 and quotes_available:
                     self.stop_loss_increment = math.ceil(straddle_range)
+                    if self.position_count > 0:
+                        self.stop_loss_increment = math.ceil(2*self.total_S/self.position_count)
                     print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
                     self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                 else:
@@ -3705,7 +3709,7 @@ class ESDynamicStraddleStrategy(Object):
 
                 if straddle_range > 0 and quotes_available:
                     if self.position_count > 0:
-                        av_straddle_range = straddle_range/self.position_count
+                        av_straddle_range = 2*self.total_S/self.position_count # av straddle range is 2*average S per leg
                     else:
                         av_straddle_range = straddle_range
 
@@ -3767,7 +3771,7 @@ class ESDynamicStraddleStrategy(Object):
                                         self.log_file_handle.write("skip closing short call position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
                 if straddle_range > 0 and quotes_available:
                     if self.position_count > 0:
-                        av_straddle_range = straddle_range/self.position_count
+                        av_straddle_range = 2*self.total_S/self.position_count # av straddle range is 2*average S per leg
                     else:
                         av_straddle_range = straddle_range
 
@@ -3848,7 +3852,7 @@ class ESDynamicStraddleStrategy(Object):
                         range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
                         #range_start = min(range_start, self.hedge_range_upper_strike)
                         if self.position_count > 0:
-                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
@@ -3906,7 +3910,7 @@ class ESDynamicStraddleStrategy(Object):
                         range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
                         #range_start = max(range_start, self.hedge_range_lower_strike)
                         if self.position_count > 0:
-                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 - 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
@@ -4156,7 +4160,8 @@ class ESDynamicStraddleStrategy(Object):
                     tick_size = 0.25
                 spread_size = int((ask_price - bid_price)/tick_size)
                 for limit_price_tick_num in reversed(range(spread_size+1+2*self.limit_price_slack_ticks)):
-                    limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
+                    #limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
+                    limit_price = bid_price + limit_price_tick_num * tick_size
                     short_put_option_to_open = OrderSamples.LimitOrder("SELL", 1, limit_price)
                     short_put_option_to_open.orderType = "LMT"
                     short_put_option_to_open.action = "SELL"
@@ -4216,7 +4221,8 @@ class ESDynamicStraddleStrategy(Object):
                     tick_size = 0.25
                 spread_size = int((ask_price - bid_price)/tick_size)
                 for limit_price_tick_num in reversed(range(spread_size+1+2*self.limit_price_slack_ticks)):
-                    limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
+                    #limit_price = bid_price - self.limit_price_slack_ticks * tick_size + limit_price_tick_num * tick_size
+                    limit_price = bid_price + limit_price_tick_num * tick_size
                     short_call_option_to_open = OrderSamples.LimitOrder("SELL", 1, limit_price)
                     short_call_option_to_open.orderType = "LMT"
                     short_call_option_to_open.action = "SELL"
