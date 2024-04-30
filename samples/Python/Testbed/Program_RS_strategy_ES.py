@@ -2445,7 +2445,7 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240429"
+        self.OptionTradeDate = "20240501"
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
@@ -2519,6 +2519,8 @@ class ESDynamicStraddleStrategy(Object):
         self.straddle_call_itm_offset = 5
         self.straddle_put_itm_offset = 5
         self.outer_hedge_start_sr_multiplier = 1.4
+        self.short_option_min_price_threshold = 8 #do not sell short options below this price, not worth the high gamma risk
+        
 
         #make a thread safe shared queue for status monitoring
         self.status_queue_ = None #each time last_hearbeat_time is updated, put a message in this queue. a separate thread will monitor this queue and if no message is received for 3 minute, ring an alarm
@@ -2528,14 +2530,14 @@ class ESDynamicStraddleStrategy(Object):
         self.total_S = 0
         self.total_R = 0
         self.position_count = 0
-        self.range_lower_strike = None
-        self.range_upper_strike = None
+        self.range_lower_strike = 0
+        self.range_upper_strike = 0
         self.hedge_total_S = 0
         self.hedge_total_R = 0
         self.hedge_position_count = 0
-        self.hedge_range_lower_strike = None
-        self.hedge_range_upper_strike = None
-        
+        self.hedge_range_lower_strike = 0
+        self.hedge_range_upper_strike = 0
+            
         
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
@@ -3158,8 +3160,8 @@ class ESDynamicStraddleStrategy(Object):
         self.hedge_total_R = float(hedge_total_R)
         self.position_count = int(position_count)
         self.hedge_position_count = int(hedge_position_count)
-        print("range_lower_strike:", self.range_lower_strike, "range_upper_strike:", self.range_upper_strike, "total_S:", self.total_S, "total_R:", self.total_R, "position_count:", self.position_count, "hedge_range_lower_strike:", self.hedge_range_lower_strike, "hedge_range_upper_strike:", self.hedge_range_upper_strike, "hedge_total_S:", self.hedge_total_S, "hedge_total_R:", self.hedge_total_R, "hedge_position_count:", self.hedge_position_count)
-        self.log_file_handle.write("range_lower_strike:" + str(self.range_lower_strike) + "range_upper_strike:" + str(self.range_upper_strike) + "total_S:" + str(self.total_S) + "total_R:" + str(self.total_R) + "position_count:" + str(self.position_count) + "hedge_range_lower_strike:" + str(self.hedge_range_lower_strike) + "hedge_range_upper_strike:" + str(self.hedge_range_upper_strike) + "hedge_total_S:" + str(self.hedge_total_S) + "hedge_total_R:" + str(self.hedge_total_R) + "hedge_position_count:" + str(self.hedge_position_count) + "\n")
+        print("range_lower_strike:", self.range_lower_strike, "range_upper_strike:", self.range_upper_strike, "total_S:", self.total_S, "total_R:", self.total_R, "position_count:", self.position_count, "hedge_range_lower_strike:", self.hedge_range_lower_strike, "hedge_range_upper_strike:", self.hedge_range_upper_strike, "hedge_total_S:", self.hedge_total_S, "hedge_total_R:", self.hedge_total_R, "hedge_position_count:", self.hedge_position_count, "price:", newESPrice, "time:", current_time)
+        self.log_file_handle.write("range_lower_strike:" + str(self.range_lower_strike) + "range_upper_strike:" + str(self.range_upper_strike) + "total_S:" + str(self.total_S) + "total_R:" + str(self.total_R) + "position_count:" + str(self.position_count) + "hedge_range_lower_strike:" + str(self.hedge_range_lower_strike) + "hedge_range_upper_strike:" + str(self.hedge_range_upper_strike) + "hedge_total_S:" + str(self.hedge_total_S) + "hedge_total_R:" + str(self.hedge_total_R) + "hedge_position_count:" + str(self.hedge_position_count) + "price:" + str(newESPrice) + "time:" + str(current_time) + "\n")
 
     def updateESPrice(self, tickType, newESPrice):
         testapp = self.testapp
@@ -3288,10 +3290,10 @@ class ESDynamicStraddleStrategy(Object):
                     if spread_ok_for_trade:
                         straddle_call_price = (bid_price + ask_price)/2
                     straddle_doesnt_cross_hedge_range_strikes = True
-                    if self.hedge_range_upper_strike is not None:
+                    if self.hedge_range_upper_strike > 0:
                         if straddle_call_strike_ >= self.hedge_range_upper_strike:
                             straddle_doesnt_cross_hedge_range_strikes = False
-                    if self.hedge_range_lower_strike is not None:
+                    if self.hedge_range_lower_strike > 0:
                         if straddle_call_strike_ <= self.hedge_range_lower_strike:
                             straddle_doesnt_cross_hedge_range_strikes = False
                     if self.short_call_option_positions.get(straddle_call_strike_, 0) == 0 and spread_ok_for_trade and straddle_doesnt_cross_hedge_range_strikes:
@@ -3317,10 +3319,10 @@ class ESDynamicStraddleStrategy(Object):
                     if spread_ok_for_trade:
                         straddle_put_price = (bid_price + ask_price)/2
                     straddle_doesnt_cross_hedge_range_strikes = True
-                    if self.hedge_range_upper_strike is not None:
+                    if self.hedge_range_upper_strike > 0:
                         if straddle_put_strike_ >= self.hedge_range_upper_strike:
                             straddle_doesnt_cross_hedge_range_strikes = False
-                    if self.hedge_range_lower_strike is not None:
+                    if self.hedge_range_lower_strike > 0:
                         if straddle_put_strike_ <= self.hedge_range_lower_strike:
                             straddle_doesnt_cross_hedge_range_strikes = False
                     if self.short_put_option_positions.get(straddle_put_strike_, 0) == 0 and spread_ok_for_trade and straddle_doesnt_cross_hedge_range_strikes:
@@ -3351,7 +3353,11 @@ class ESDynamicStraddleStrategy(Object):
                     self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                 
                 if straddle_range > 0 and quotes_available:
-                    av_straddle_range = floor(2*self.total_S/self.position_count) #straddle position size is half of position count
+                    if self.position_count > 0:
+                        av_straddle_range = straddle_range/self.position_count
+                    else:
+                        av_straddle_range = straddle_range
+
                     for strike, position in self.short_call_option_positions.items():
                         if strike < lastESPrice_ - max(straddle_range, av_straddle_range):
                             if position < 0:
@@ -3410,7 +3416,11 @@ class ESDynamicStraddleStrategy(Object):
                                         self.log_file_handle.write("skip closing short call position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "spread_ok_for_trade:" + str(spread_ok_for_trade) + "\n")
 
                 if straddle_range > 0 and quotes_available:
-                    av_straddle_range = floor(2*self.total_S/self.position_count) #straddle position size is half of position count
+                    if self.position_count > 0:
+                        av_straddle_range = straddle_range/self.position_count
+                    else:
+                        av_straddle_range = straddle_range
+
                     #close all short put positions with strike price greater than lastESPrice_
                     for strike, position in self.short_put_option_positions.items():
                         if strike > lastESPrice_ + max(straddle_range, av_straddle_range):
@@ -3484,11 +3494,12 @@ class ESDynamicStraddleStrategy(Object):
                     if up_call_buy_order_needed:
                         #keep issuing up call buy OCO orders to buy a call for 0.50 limit price starting at strike price of currentESPrice + 20 and incrementing by 5 until the OCO order executes.
                         up_call_buy_OCA_order_tuples = []
-                        #range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
+                        range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
                         #range_start = min(range_start, self.hedge_range_upper_strike)
-                        range_start = (self.range_upper_strike - self.range_lower_strike)/2 + 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
-                        range_start = floor(range_start) - floor(range_start) % 5
-                        for offset in range(range_start, self.hedge_outer_offset, 5):
+                        if self.position_count > 0:
+                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start = floor(range_start_f) - floor(range_start_f) % 5
+                        for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
                             if limit_price >= 10:
                                 limit_price = math.ceil(limit_price * 4) / 4
@@ -3541,11 +3552,12 @@ class ESDynamicStraddleStrategy(Object):
                     if up_put_buy_order_needed:
                         #keep issuing up call buy OCO orders to buy a put for 0.50 limit price starting at strike price of currentESPrice - 20 and decrementing by 5 until the OCO order executess.
                         up_put_buy_OCA_order_tuples = []
-                        #range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
+                        range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
                         #range_start = max(range_start, self.hedge_range_lower_strike)
-                        range_start = (self.range_upper_strike - self.range_lower_strike)/2 - 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
-                        range_start = floor(range_start) - floor(range_start) % 5
-                        for offset in range(range_start, self.hedge_outer_offset, 5):
+                        if self.position_count > 0:
+                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 - 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start = floor(range_start_f) - floor(range_start_f) % 5
+                        for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
                             if limit_price >= 10:
                                 limit_price = math.ceil(limit_price * 4) / 4
@@ -3631,10 +3643,10 @@ class ESDynamicStraddleStrategy(Object):
                     if spread_ok_for_trade:
                         straddle_call_price = (bid_price + ask_price)/2
                     straddle_doesnt_cross_hedge_range_strikes = True
-                    if self.hedge_range_upper_strike is not None:
+                    if self.hedge_range_upper_strike > 0:
                         if straddle_call_strike_ >= self.hedge_range_upper_strike:
                             straddle_doesnt_cross_hedge_range_strikes = False
-                    if self.hedge_range_lower_strike is not None:
+                    if self.hedge_range_lower_strike > 0:
                         if straddle_call_strike_ <= self.hedge_range_lower_strike:
                             straddle_doesnt_cross_hedge_range_strikes = False
                     if self.short_call_option_positions.get(straddle_call_strike_, 0) == 0 and spread_ok_for_trade and straddle_doesnt_cross_hedge_range_strikes:
@@ -3658,10 +3670,10 @@ class ESDynamicStraddleStrategy(Object):
                     if spread_ok_for_trade:
                         straddle_put_price = (bid_price + ask_price)/2
                     straddle_doesnt_cross_hedge_range_strikes = True
-                    if self.hedge_range_upper_strike is not None:
+                    if self.hedge_range_upper_strike > 0:
                         if straddle_put_strike_ >= self.hedge_range_upper_strike:
                             straddle_doesnt_cross_hedge_range_strikes = False
-                    if self.hedge_range_lower_strike is not None:
+                    if self.hedge_range_lower_strike > 0:
                         if straddle_put_strike_ <= self.hedge_range_lower_strike:
                             straddle_doesnt_cross_hedge_range_strikes = False
                     if self.short_put_option_positions.get(straddle_put_strike_, 0) == 0 and spread_ok_for_trade and straddle_doesnt_cross_hedge_range_strikes:
@@ -3692,7 +3704,11 @@ class ESDynamicStraddleStrategy(Object):
                     self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
 
                 if straddle_range > 0 and quotes_available:
-                    av_straddle_range = floor(2*self.total_S/self.position_count) #straddle position size is half of position count
+                    if self.position_count > 0:
+                        av_straddle_range = straddle_range/self.position_count
+                    else:
+                        av_straddle_range = straddle_range
+
                     for strike, position in self.short_call_option_positions.items():
                         if strike < lastESPrice_ - max(straddle_range, av_straddle_range):
                             if position < 0:
@@ -3750,7 +3766,11 @@ class ESDynamicStraddleStrategy(Object):
                                         print("skip closing short call position for strike:", strike, "bid_price:", bid_price, "ask_price:", ask_price, "spread:", spread)
                                         self.log_file_handle.write("skip closing short call position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
                 if straddle_range > 0 and quotes_available:
-                    av_straddle_range = floor(2*self.total_S/self.position_count) #straddle position size is half of position count
+                    if self.position_count > 0:
+                        av_straddle_range = straddle_range/self.position_count
+                    else:
+                        av_straddle_range = straddle_range
+
                     #close all short put positions with strike price greater than lastESPrice_
                     for strike, position in self.short_put_option_positions.items():
                         if strike > lastESPrice_ + max(straddle_range, av_straddle_range):
@@ -3825,11 +3845,12 @@ class ESDynamicStraddleStrategy(Object):
                     if down_call_buy_order_needed:
                         #keep issuing down call buy OCO orders to buy a put for 0.50 limit price starting at strike price of currentESPrice + 20 and incrementing by 5 until the OCO order executes.
                         down_call_buy_OCA_order_tuples = []
-                        #range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
+                        range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
                         #range_start = min(range_start, self.hedge_range_upper_strike)
-                        range_start = (self.range_upper_strike - self.range_lower_strike)/2 + 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
-                        range_start = floor(range_start) - floor(range_start) % 5
-                        for offset in range(range_start, self.hedge_outer_offset, 5):
+                        if self.position_count > 0:
+                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start = floor(range_start_f) - floor(range_start_f) % 5
+                        for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
                             if limit_price >= 10:
                                 limit_price = math.ceil(limit_price * 4) / 4
@@ -3882,11 +3903,12 @@ class ESDynamicStraddleStrategy(Object):
                     if down_put_buy_order_needed:
                         #keep issuing down put buy OCO orders to buy a put for 0.50 limit price starting at strike price of currentESPrice - 20 and decrementing by 5 until the OCO order executes.
                         down_put_buy_OCA_order_tuples = []
-                        #range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
+                        range_start = floor(self.outer_hedge_start_sr_multiplier*straddle_range) - floor(self.outer_hedge_start_sr_multiplier*straddle_range) % 5
                         #range_start = max(range_start, self.hedge_range_lower_strike)
-                        range_start = (self.range_upper_strike - self.range_lower_strike)/2 - 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
-                        range_start = floor(range_start) - floor(range_start) % 5
-                        for offset in range(range_start, self.hedge_outer_offset, 5):
+                        if self.position_count > 0:
+                            range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 - 4*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start = floor(range_start_f) - floor(range_start_f) % 5
+                        for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             limit_price = straddle_range / self.rs_hedge_divisor
                             if limit_price >= 10:
                                 limit_price = math.ceil(limit_price * 4) / 4
@@ -4128,7 +4150,8 @@ class ESDynamicStraddleStrategy(Object):
             ask_price = self.ES_FOP_quote_ask_put[straddle_put_strike_]
             spread = ask_price - bid_price
             spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
-            if spread_ok_for_trade:
+            price_min_threshold_met = bid_price >= self.short_option_min_price_threshold
+            if spread_ok_for_trade and price_min_threshold_met:
                 if bid_price is not None and ask_price is not None and ask_price >= 10:
                     tick_size = 0.25
                 spread_size = int((ask_price - bid_price)/tick_size)
@@ -4187,7 +4210,8 @@ class ESDynamicStraddleStrategy(Object):
             ask_price = self.ES_FOP_quote_ask_call[straddle_call_strike_]
             spread = ask_price - bid_price
             spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
-            if spread_ok_for_trade:
+            price_min_threshold_met = bid_price >= self.short_option_min_price_threshold
+            if spread_ok_for_trade and price_min_threshold_met:
                 if bid_price is not None and ask_price is not None and ask_price >= 10:
                     tick_size = 0.25
                 spread_size = int((ask_price - bid_price)/tick_size)
