@@ -2445,7 +2445,7 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240501"
+        self.OptionTradeDate = "20240502"
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
@@ -2537,7 +2537,7 @@ class ESDynamicStraddleStrategy(Object):
         self.hedge_position_count = 0
         self.hedge_range_lower_strike = 0
         self.hedge_range_upper_strike = 0
-        self.hedge_start_sperpos_multiplier = 2    
+        self.hedge_start_sperpos_multiplier = 1.5    
         
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
@@ -3501,8 +3501,12 @@ class ESDynamicStraddleStrategy(Object):
                         if self.position_count > 0:
                             range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
+                        limit_price = straddle_range / self.rs_hedge_divisor
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
-                            limit_price = straddle_range / self.rs_hedge_divisor
+                            for limit_price_ramp in reversed(range(40)):
+                                if limit_price - limit_price_ramp * 0.05 < 0.20:
+                                    continue
+                                limit_price = limit_price - limit_price_ramp * 0.05
                             if limit_price >= 10:
                                 limit_price = math.ceil(limit_price * 4) / 4
                             else:
@@ -3559,21 +3563,25 @@ class ESDynamicStraddleStrategy(Object):
                         if self.position_count > 0:
                             range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
+                        limit_price = straddle_range / self.rs_hedge_divisor
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
-                            limit_price = straddle_range / self.rs_hedge_divisor
-                            if limit_price >= 10:
-                                limit_price = math.ceil(limit_price * 4) / 4
-                            else:
-                                limit_price = math.ceil(limit_price * 20) / 20
+                            for limit_price_ramp in reversed(range(40)):
+                                if limit_price - limit_price_ramp * 0.05 < 0.20:
+                                    continue
+                                limit_price = limit_price - limit_price_ramp * 0.05
+                                if limit_price >= 10:
+                                    limit_price = math.ceil(limit_price * 4) / 4
+                                else:
+                                    limit_price = math.ceil(limit_price * 20) / 20
 
-                            up_put_buy_order = OrderSamples.LimitOrder("BUY", 1, limit_price)
-                            up_put_buy_order.orderType = "LMT"
-                            up_put_buy_order.action = "BUY"
-                            up_put_buy_order.totalQuantity = 1
-                            up_put_buy_order.lmtPrice = limit_price
-                            up_put_buy_order.transmit = self.transmit_orders
-                            up_put_buy_order_tuple = (lastESPrice_ - offset, up_put_buy_order)
-                            up_put_buy_OCA_order_tuples.append(up_put_buy_order_tuple)
+                                up_put_buy_order = OrderSamples.LimitOrder("BUY", 1, limit_price)
+                                up_put_buy_order.orderType = "LMT"
+                                up_put_buy_order.action = "BUY"
+                                up_put_buy_order.totalQuantity = 1
+                                up_put_buy_order.lmtPrice = limit_price
+                                up_put_buy_order.transmit = self.transmit_orders
+                                up_put_buy_order_tuple = (lastESPrice_ - offset, up_put_buy_order)
+                                up_put_buy_OCA_order_tuples.append(up_put_buy_order_tuple)
                         up_put_buy_OCA_orders = [o for _strike, o in up_put_buy_OCA_order_tuples]
                         oco_tag_ = "UpPutBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(str(oco_tag_), up_put_buy_OCA_orders, 2)
@@ -3854,20 +3862,24 @@ class ESDynamicStraddleStrategy(Object):
                         if self.position_count > 0:
                             range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
+                        limit_price = straddle_range / self.rs_hedge_divisor
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
-                            limit_price = straddle_range / self.rs_hedge_divisor
-                            if limit_price >= 10:
-                                limit_price = math.ceil(limit_price * 4) / 4
-                            else:
-                                limit_price = math.ceil(limit_price * 20) / 20
-                            down_call_buy_order = OrderSamples.LimitOrder("BUY", 1, limit_price)
-                            down_call_buy_order.orderType = "LMT"
-                            down_call_buy_order.action = "BUY"
-                            down_call_buy_order.totalQuantity = 1
-                            down_call_buy_order.lmtPrice = limit_price
-                            down_call_buy_order.transmit = self.transmit_orders
-                            down_call_buy_order_tuple = (lastESPrice_ + offset, down_call_buy_order)
-                            down_call_buy_OCA_order_tuples.append(down_call_buy_order_tuple)
+                            for limit_price_ramp in reversed(range(40)):
+                                if limit_price - limit_price_ramp * 0.05 < 0.20:
+                                    continue
+                                limit_price = limit_price - limit_price_ramp * 0.05
+                                if limit_price >= 10:
+                                    limit_price = math.ceil(limit_price * 4) / 4
+                                else:
+                                    limit_price = math.ceil(limit_price * 20) / 20
+                                down_call_buy_order = OrderSamples.LimitOrder("BUY", 1, limit_price)
+                                down_call_buy_order.orderType = "LMT"
+                                down_call_buy_order.action = "BUY"
+                                down_call_buy_order.totalQuantity = 1
+                                down_call_buy_order.lmtPrice = limit_price
+                                down_call_buy_order.transmit = self.transmit_orders
+                                down_call_buy_order_tuple = (lastESPrice_ + offset, down_call_buy_order)
+                                down_call_buy_OCA_order_tuples.append(down_call_buy_order_tuple)
                         down_call_buy_OCA_orders = [o for _strike, o in down_call_buy_OCA_order_tuples]
                         oco_tag_ = "DownCallBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(str(oco_tag_), down_call_buy_OCA_orders, 2)
@@ -3912,20 +3924,24 @@ class ESDynamicStraddleStrategy(Object):
                         if self.position_count > 0:
                             range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
+                        limit_price = straddle_range / self.rs_hedge_divisor
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
-                            limit_price = straddle_range / self.rs_hedge_divisor
-                            if limit_price >= 10:
-                                limit_price = math.ceil(limit_price * 4) / 4
-                            else:
-                                limit_price = math.ceil(limit_price * 20) / 20
-                            down_put_buy_order = OrderSamples.LimitOrder("BUY", 1, limit_price)
-                            down_put_buy_order.orderType = "LMT"
-                            down_put_buy_order.action = "BUY"
-                            down_put_buy_order.totalQuantity = 1
-                            down_put_buy_order.lmtPrice = limit_price
-                            down_put_buy_order.transmit = self.transmit_orders
-                            down_put_buy_order_tuple = (lastESPrice_ - offset, down_put_buy_order)
-                            down_put_buy_OCA_order_tuples.append(down_put_buy_order_tuple)
+                            for limit_price_ramp in reversed(range(40)):
+                                if limit_price - limit_price_ramp * 0.05 < 0.20:
+                                    continue
+                                limit_price = limit_price - limit_price_ramp * 0.05
+                                if limit_price >= 10:
+                                    limit_price = math.ceil(limit_price * 4) / 4
+                                else:
+                                    limit_price = math.ceil(limit_price * 20) / 20
+                                down_put_buy_order = OrderSamples.LimitOrder("BUY", 1, limit_price)
+                                down_put_buy_order.orderType = "LMT"
+                                down_put_buy_order.action = "BUY"
+                                down_put_buy_order.totalQuantity = 1
+                                down_put_buy_order.lmtPrice = limit_price
+                                down_put_buy_order.transmit = self.transmit_orders
+                                down_put_buy_order_tuple = (lastESPrice_ - offset, down_put_buy_order)
+                                down_put_buy_OCA_order_tuples.append(down_put_buy_order_tuple)
                         down_put_buy_OCA_orders = [o for _strike, o in down_put_buy_OCA_order_tuples]
                         oco_tag_ = "DownPutBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(oco_tag_, down_put_buy_OCA_orders, 2)
@@ -4451,7 +4467,7 @@ def main():
         #handle keyboard interrupt
         except KeyboardInterrupt:
             print("Keyboard interrupt")
-            current_time = datetime.datetime.datetime.now()
+            current_time = datetime.datetime.now()
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                 app.ESDynamicStraddleStrategy.log_file_handle.write("Keyboard interrupt at time:" + str(current_time) + "\n")
             #write state_seq_id file
