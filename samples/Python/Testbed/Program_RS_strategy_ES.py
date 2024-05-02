@@ -3215,6 +3215,52 @@ class ESDynamicStraddleStrategy(Object):
                 print("requesting market data for put_contract:", put_contract)
                 self.log_file_handle.write("requesting market data for put_contract:" + str(put_contract) + "\n")
         
+        #subscribe for call hedge contract prices
+        if self.range_lower_strike > 0 and self.range_upper_strike > 0 and self.position_count > 0:
+            for strike_off in range(0, 30, 5):
+                is_call_subscription_needed = True
+                is_put_subscription_needed = True
+                call_strike = floor(self.range_lower_strike + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count) - floor(self.range_lower_strike + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count) % 5 + strike_off
+                put_strike = floor(self.range_upper_strike - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count) - floor(self.range_upper_strike - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count) % 5 + strike_off
+                if call_strike in self.ES_FOP_quote_bid_call and self.ES_FOP_quote_bid_call_time[call_strike] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit):
+                    is_call_subscription_needed = False
+                if call_strike in self.ES_FOP_quote_ask_call and self.ES_FOP_quote_ask_call_time[call_strike] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit):
+                    is_call_subscription_needed = False
+                if put_strike in self.ES_FOP_quote_bid_put and self.ES_FOP_quote_bid_put_time[put_strike] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit):
+                    is_put_subscription_needed = False
+                if put_strike in self.ES_FOP_quote_ask_put and self.ES_FOP_quote_ask_put_time[put_strike] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit):
+                    is_put_subscription_needed = False
+                if is_call_subscription_needed:
+                    call_contract = Contract()
+                    call_contract.symbol = "ES"
+                    call_contract.secType = "FOP"
+                    call_contract.exchange = "CME"
+                    call_contract.currency = "USD"
+                    call_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
+                    call_contract.right = "C"
+                    call_contract.multiplier = self.es_contract_multiplier
+                    call_contract.strike = call_strike
+                    reqId_call_sub = testapp.nextOrderId()
+                    testapp.reqMktData(reqId_call_sub, call_contract, "", False, False, [])
+                    testapp.MktDataRequest[reqId_call_sub] = call_contract
+                    print("requesting market data for call_contract:", call_contract)
+                    self.log_file_handle.write("requesting market data for call_contract:" + str(call_contract) + "\n")
+                if is_put_subscription_needed:
+                    put_contract = Contract()
+                    put_contract.symbol = "ES"
+                    put_contract.secType = "FOP"
+                    put_contract.exchange = "CME"
+                    put_contract.currency = "USD"
+                    put_contract.lastTradeDateOrContractMonth = self.OptionTradeDate
+                    put_contract.right = "P"
+                    put_contract.multiplier = self.es_contract_multiplier
+                    put_contract.strike = put_strike
+                    reqId_put_sub = testapp.nextOrderId()
+                    testapp.reqMktData(reqId_put_sub, put_contract, "", False, False, [])
+                    testapp.MktDataRequest[reqId_put_sub] = put_contract
+                    print("requesting market data for put_contract:", put_contract)
+                    self.log_file_handle.write("requesting market data for put_contract:" + str(put_contract) + "\n")
+
 
         #("updateESPrice called with newESPrice:", newESPrice)
         if self.lastESPrice is None and self.currentESPrice is None:
@@ -3347,7 +3393,7 @@ class ESDynamicStraddleStrategy(Object):
                 if straddle_range > 0 and quotes_available:
                     self.stop_loss_increment = math.ceil(straddle_range)
                     if self.position_count > 0:
-                        self.stop_limit_increment = math.ceil(2*self.total_S/self.position_count)
+                        self.stop_loss_increment = math.ceil(4*self.total_S/self.position_count)
                     print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
                     self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                 else:
@@ -3356,7 +3402,7 @@ class ESDynamicStraddleStrategy(Object):
                 
                 if straddle_range > 0 and quotes_available:
                     if self.position_count > 0:
-                        av_straddle_range = 2*self.total_S/self.position_count # av straddle range is 2*average S per leg
+                        av_straddle_range = 4*self.total_S/self.position_count # av straddle range is 2*average S per leg
                     else:
                         av_straddle_range = straddle_range
 
@@ -3419,7 +3465,7 @@ class ESDynamicStraddleStrategy(Object):
 
                 if straddle_range > 0 and quotes_available:
                     if self.position_count > 0:
-                        av_straddle_range = 2*self.total_S/self.position_count # av straddle range is 2*average S per leg
+                        av_straddle_range = 4*self.total_S/self.position_count # av straddle range is 2*average S per leg
                     else:
                         av_straddle_range = straddle_range
 
@@ -3500,15 +3546,25 @@ class ESDynamicStraddleStrategy(Object):
                         #range_start = min(range_start, self.hedge_range_upper_strike)
                         if self.position_count > 0:
                             #range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
-                            range_start_f = self.range_lower_strike + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start_f = self.range_lower_strike - lastESPrice_ + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
                         limit_price = straddle_range / self.rs_hedge_divisor
                         lp = limit_price
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             for limit_price_ramp in reversed(range(1,4,1)):
-                                if lp/limit_price_ramp < 0.20:
-                                    continue
-                                limit_price = lp/limit_price_ramp
+                                #get the limit price from bid/ask quotes if available
+                                if self.ES_FOP_quote_bid_call.get(lastESPrice_ + offset, None) is not None and self.ES_FOP_quote_ask_call.get(lastESPrice_ + offset, None) is not None:
+                                    bid_price = self.ES_FOP_quote_bid_call[lastESPrice_ + offset]
+                                    ask_price = self.ES_FOP_quote_ask_call[lastESPrice_ + offset]
+                                    spread = ask_price - bid_price
+                                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                                    if spread_ok_for_trade:
+                                        limit_price = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                else:    
+                                    if lp/limit_price_ramp < 0.20:
+                                        continue
+                                    limit_price = lp/limit_price_ramp
+
                                 if limit_price >= 10:
                                     limit_price = math.ceil(limit_price * 4) / 4
                                 else:
@@ -3564,15 +3620,25 @@ class ESDynamicStraddleStrategy(Object):
                         #range_start = max(range_start, self.hedge_range_lower_strike)
                         if self.position_count > 0:
                             #range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
-                            range_start_f = self.range_upper_strike - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start_f = self.range_upper_strike - lastESPrice_ - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
                         limit_price = straddle_range / self.rs_hedge_divisor
                         lp = limit_price
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             for limit_price_ramp in reversed(range(1,4,1)):
-                                if lp/limit_price_ramp < 0.20:
-                                    continue
-                                limit_price = lp/limit_price_ramp
+                                #get the limit price from bid/ask quotes if available
+                                if self.ES_FOP_quote_bid_put.get(lastESPrice_ - offset, None) is not None and self.ES_FOP_quote_ask_put.get(lastESPrice_ - offset, None) is not None:
+                                    bid_price = self.ES_FOP_quote_bid_put[lastESPrice_ - offset]
+                                    ask_price = self.ES_FOP_quote_ask_put[lastESPrice_ - offset]
+                                    spread = ask_price - bid_price
+                                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                                    if spread_ok_for_trade:
+                                        limit_price = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                else:
+                                    if lp/limit_price_ramp < 0.20:
+                                        continue
+                                    limit_price = lp/limit_price_ramp
+
                                 if limit_price >= 10:
                                     limit_price = math.ceil(limit_price * 4) / 4
                                 else:
@@ -3712,7 +3778,7 @@ class ESDynamicStraddleStrategy(Object):
                 if straddle_range > 0 and quotes_available:
                     self.stop_loss_increment = math.ceil(straddle_range)
                     if self.position_count > 0:
-                        self.stop_loss_increment = math.ceil(2*self.total_S/self.position_count)
+                        self.stop_loss_increment = math.ceil(4*self.total_S/self.position_count)
                     print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
                     self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                 else:
@@ -3721,7 +3787,7 @@ class ESDynamicStraddleStrategy(Object):
 
                 if straddle_range > 0 and quotes_available:
                     if self.position_count > 0:
-                        av_straddle_range = 2*self.total_S/self.position_count # av straddle range is 2*average S per leg
+                        av_straddle_range = 4*self.total_S/self.position_count # av straddle range is 2*average S per leg
                     else:
                         av_straddle_range = straddle_range
 
@@ -3783,7 +3849,7 @@ class ESDynamicStraddleStrategy(Object):
                                         self.log_file_handle.write("skip closing short call position for strike:" + str(strike) + "bid_price:" + str(bid_price) + "ask_price:" + str(ask_price) + "spread:" + str(spread) + "\n")
                 if straddle_range > 0 and quotes_available:
                     if self.position_count > 0:
-                        av_straddle_range = 2*self.total_S/self.position_count # av straddle range is 2*average S per leg
+                        av_straddle_range = 4*self.total_S/self.position_count # av straddle range is 2*average S per leg
                     else:
                         av_straddle_range = straddle_range
 
@@ -3865,15 +3931,25 @@ class ESDynamicStraddleStrategy(Object):
                         #range_start = min(range_start, self.hedge_range_upper_strike)
                         if self.position_count > 0:
                             #range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
-                            range_start_f = self.range_lower_strike + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start_f = self.range_lower_strike - lastESPrice_ + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
                         limit_price = straddle_range / self.rs_hedge_divisor
                         lp = limit_price
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             for limit_price_ramp in reversed(range(1,4,1)):
-                                if lp/limit_price_ramp < 0.20:
-                                    continue
-                                limit_price = lp/limit_price_ramp
+                                #get the limit price from bid/ask quotes if available
+                                if self.ES_FOP_quote_bid_call.get(lastESPrice_ + offset, None) is not None and self.ES_FOP_quote_ask_call.get(lastESPrice_ + offset, None) is not None:
+                                    bid_price = self.ES_FOP_quote_bid_call[lastESPrice_ + offset]
+                                    ask_price = self.ES_FOP_quote_ask_call[lastESPrice_ + offset]
+                                    spread = ask_price - bid_price
+                                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                                    if spread_ok_for_trade:
+                                        limit_price = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                else:
+                                    if lp/limit_price_ramp < 0.20:
+                                        continue
+                                    limit_price = lp/limit_price_ramp
+
                                 if limit_price >= 10:
                                     limit_price = math.ceil(limit_price * 4) / 4
                                 else:
@@ -3929,15 +4005,25 @@ class ESDynamicStraddleStrategy(Object):
                         #range_start = max(range_start, self.hedge_range_lower_strike)
                         if self.position_count > 0:
                             #range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
-                            range_start_f = self.range_upper_strike - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start_f = self.range_upper_strike - lastESPrice_ - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
                         limit_price = straddle_range / self.rs_hedge_divisor
                         lp = limit_price
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             for limit_price_ramp in reversed(range(1,4,1)):
-                                if lp/limit_price_ramp < 0.20:
-                                    continue
-                                limit_price = lp/limit_price_ramp
+                                #get the limit price from bid/ask quotes if available
+                                if self.ES_FOP_quote_bid_put.get(lastESPrice_ - offset, None) is not None and self.ES_FOP_quote_ask_put.get(lastESPrice_ - offset, None) is not None:
+                                    bid_price = self.ES_FOP_quote_bid_put[lastESPrice_ - offset]
+                                    ask_price = self.ES_FOP_quote_ask_put[lastESPrice_ - offset]
+                                    spread = ask_price - bid_price
+                                    spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
+                                    if spread_ok_for_trade:
+                                        limit_price = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                else:
+                                    if lp/limit_price_ramp < 0.20:
+                                        continue
+                                    limit_price = lp/limit_price_ramp
+                                    
                                 if limit_price >= 10:
                                     limit_price = math.ceil(limit_price * 4) / 4
                                 else:
