@@ -2445,7 +2445,7 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240502"
+        self.OptionTradeDate = "20240503"
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
@@ -2537,7 +2537,7 @@ class ESDynamicStraddleStrategy(Object):
         self.hedge_position_count = 0
         self.hedge_range_lower_strike = 0
         self.hedge_range_upper_strike = 0
-        self.hedge_start_sperpos_multiplier = 1.8    
+        self.hedge_start_sperpos_multiplier = 3    
         
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
@@ -3243,8 +3243,8 @@ class ESDynamicStraddleStrategy(Object):
                     reqId_call_sub = testapp.nextOrderId()
                     testapp.reqMktData(reqId_call_sub, call_contract, "", False, False, [])
                     testapp.MktDataRequest[reqId_call_sub] = call_contract
-                    print("requesting market data for call_contract:", call_contract)
-                    self.log_file_handle.write("requesting market data for call_contract:" + str(call_contract) + "\n")
+                    print("requesting market data for hedge call_contract:", call_contract)
+                    self.log_file_handle.write("requesting market data for hedge call_contract:" + str(call_contract) + "\n")
                 if is_put_subscription_needed:
                     put_contract = Contract()
                     put_contract.symbol = "ES"
@@ -3258,8 +3258,8 @@ class ESDynamicStraddleStrategy(Object):
                     reqId_put_sub = testapp.nextOrderId()
                     testapp.reqMktData(reqId_put_sub, put_contract, "", False, False, [])
                     testapp.MktDataRequest[reqId_put_sub] = put_contract
-                    print("requesting market data for put_contract:", put_contract)
-                    self.log_file_handle.write("requesting market data for put_contract:" + str(put_contract) + "\n")
+                    print("requesting market data for hedge put_contract:", put_contract)
+                    self.log_file_handle.write("requesting market data for hedge put_contract:" + str(put_contract) + "\n")
 
 
         #("updateESPrice called with newESPrice:", newESPrice)
@@ -3559,11 +3559,14 @@ class ESDynamicStraddleStrategy(Object):
                                     spread = ask_price - bid_price
                                     spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
                                     if spread_ok_for_trade:
-                                        limit_price = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                        limit_price_ = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                    #cap the limit price to rs_hedge_divisor fraction of straddle range
+                                    limit_price = min(limit_price_, straddle_range / self.rs_hedge_divisor)
                                 else:    
-                                    if lp/limit_price_ramp < 0.20:
-                                        continue
-                                    limit_price = lp/limit_price_ramp
+                                    #if lp/limit_price_ramp < 0.20:
+                                    continue
+                                    #limit_price = lp/limit_price_ramp
+                                    
 
                                 if limit_price >= 10:
                                     limit_price = math.ceil(limit_price * 4) / 4
@@ -3620,7 +3623,7 @@ class ESDynamicStraddleStrategy(Object):
                         #range_start = max(range_start, self.hedge_range_lower_strike)
                         if self.position_count > 0:
                             #range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
-                            range_start_f = self.range_upper_strike - lastESPrice_ - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start_f = self.range_upper_strike - lastESPrice_ + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
                         limit_price = straddle_range / self.rs_hedge_divisor
                         lp = limit_price
@@ -3633,11 +3636,13 @@ class ESDynamicStraddleStrategy(Object):
                                     spread = ask_price - bid_price
                                     spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
                                     if spread_ok_for_trade:
-                                        limit_price = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                        limit_price_ = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                    #cap the limit price to rs_hedge_divisor fraction of straddle range
+                                    limit_price = min(limit_price_, straddle_range / self.rs_hedge_divisor)
                                 else:
-                                    if lp/limit_price_ramp < 0.20:
-                                        continue
-                                    limit_price = lp/limit_price_ramp
+                                    #if lp/limit_price_ramp < 0.20:
+                                    continue
+                                    #limit_price = lp/limit_price_ramp
 
                                 if limit_price >= 10:
                                     limit_price = math.ceil(limit_price * 4) / 4
@@ -3944,11 +3949,13 @@ class ESDynamicStraddleStrategy(Object):
                                     spread = ask_price - bid_price
                                     spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
                                     if spread_ok_for_trade:
-                                        limit_price = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                        limit_price_ = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                    #cap the limit price to rs_hedge_divisor fraction of straddle range
+                                    limit_price = min(limit_price_, straddle_range / self.rs_hedge_divisor)
                                 else:
-                                    if lp/limit_price_ramp < 0.20:
-                                        continue
-                                    limit_price = lp/limit_price_ramp
+                                    #if lp/limit_price_ramp < 0.20:
+                                    continue
+                                    #limit_price = lp/limit_price_ramp
 
                                 if limit_price >= 10:
                                     limit_price = math.ceil(limit_price * 4) / 4
@@ -4005,7 +4012,7 @@ class ESDynamicStraddleStrategy(Object):
                         #range_start = max(range_start, self.hedge_range_lower_strike)
                         if self.position_count > 0:
                             #range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
-                            range_start_f = self.range_upper_strike - lastESPrice_ - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
+                            range_start_f = self.range_upper_strike - lastESPrice_ + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
                         limit_price = straddle_range / self.rs_hedge_divisor
                         lp = limit_price
@@ -4018,12 +4025,14 @@ class ESDynamicStraddleStrategy(Object):
                                     spread = ask_price - bid_price
                                     spread_ok_for_trade = spread <= self.max_spread_for_trade and spread >= 0
                                     if spread_ok_for_trade:
-                                        limit_price = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                        limit_price_ = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
+                                    #cap the limit price to rs_hedge_divisor fraction of straddle range
+                                    limit_price = min(limit_price_, straddle_range / self.rs_hedge_divisor)
                                 else:
-                                    if lp/limit_price_ramp < 0.20:
-                                        continue
-                                    limit_price = lp/limit_price_ramp
-                                    
+                                    #if lp/limit_price_ramp < 0.20:
+                                    continue
+                                    #limit_price = lp/limit_price_ramp
+
                                 if limit_price >= 10:
                                     limit_price = math.ceil(limit_price * 4) / 4
                                 else:
@@ -4569,9 +4578,11 @@ def main():
             if True:
                 state_seq_id_file_name = "state_seq_id_" + app.ESDynamicStraddleStrategy.OptionTradeDate + ".txt"
                 with open(state_seq_id_file_name, "w") as f:
-                    f.write(str(app.ESDynamicStraddleStrategy.state_seq_id))
-                if app.ESDynamicStraddleStrategy.log_file_handle is not None:
-                    app.ESDynamicStraddleStrategy.log_file_handle.write("Writing state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
+                    new_state_seq_id = app.ESDynamicStraddleStrategy.state_seq_id + 10
+                    f.write(str(new_state_seq_id))
+                    print("Writing state_seq_id to file with incremented by +10 value:", new_state_seq_id, "time:", current_time)
+                    if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                        app.ESDynamicStraddleStrategy.log_file_handle.write("Writing state_seq_id to file with incremented +10 value:" + str(new_state_seq_id) + str(current_time) + "\n")
             #except:
             #    if app.ESDynamicStraddleStrategy.log_file_handle is not None:
             #        app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
@@ -4593,9 +4604,11 @@ def main():
             if True:
                 state_seq_id_file_name = "state_seq_id_" + app.ESDynamicStraddleStrategy.OptionTradeDate + ".txt"
                 with open(state_seq_id_file_name, "w") as f:
-                    f.write(str(app.ESDynamicStraddleStrategy.state_seq_id))
-                if app.ESDynamicStraddleStrategy.log_file_handle is not None:
-                    app.ESDynamicStraddleStrategy.log_file_handle.write("Writing state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
+                    new_state_seq_id = app.ESDynamicStraddleStrategy.state_seq_id + 10
+                    f.write(str(new_state_seq_id))
+                    print("Writing state_seq_id to file with incremented by +10 value:", new_state_seq_id, "time:", current_time)
+                    if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                        app.ESDynamicStraddleStrategy.log_file_handle.write("Writing state_seq_id to file with incremented +10 value:" + str(new_state_seq_id) + str(current_time) + "\n")
             #except:
             #    if app.ESDynamicStraddleStrategy.log_file_handle is not None:
             #        app.ESDynamicStraddleStrategy.log_file_handle.write("Unable to write state_seq_id to file, value:" + str(app.ESDynamicStraddleStrategy.state_seq_id) + str(current_time) + "\n")
