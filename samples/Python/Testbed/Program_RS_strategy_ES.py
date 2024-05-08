@@ -217,10 +217,10 @@ class spxwPosition(Object):
 
 # ! [socket_init]
 class TestApp(TestWrapper, TestClient):
-    def __init__(self, trade_date):
+    def __init__(self, trade_date, order_id_offset):
         TestWrapper.__init__(self)
         TestClient.__init__(self, wrapper=self)
-        self.ESDynamicStraddleStrategy = ESDynamicStraddleStrategy(self, trade_date)
+        self.ESDynamicStraddleStrategy = ESDynamicStraddleStrategy(self, trade_date, order_id_offset)
         # ! [socket_init]
         self.nKeybInt = 0
         self.started = False
@@ -251,6 +251,7 @@ class TestApp(TestWrapper, TestClient):
         self.spxwPrices = [] #value is array of spxwPrice
         
         self.message_from_ib_queue = queue.Queue()
+        self.order_id_offset = order_id_offset
 
 
 
@@ -282,11 +283,11 @@ class TestApp(TestWrapper, TestClient):
     @iswrapper
     # ! [nextvalidid]
     def nextValidId(self, orderId: int):
-        super().nextValidId(orderId)
+        super().nextValidId(orderId + self.order_id_offset)
 
-        logging.debug("setting nextValidOrderId: %d", orderId)
-        self.nextValidOrderId = orderId
-        print("NextValidId:", orderId)
+        logging.debug("setting nextValidOrderId: %d", orderId + self.order_id_offset)
+        self.nextValidOrderId = orderId + self.order_id_offset
+        print("NextValidId:", self.nextValidOrderId)
     # ! [nextvalidid]
 
         # we can start now
@@ -2432,7 +2433,7 @@ class TestApp(TestWrapper, TestClient):
     # ! [userinfo]
 
 class ESDynamicStraddleStrategy(Object):
-    def __init__(self,testapp, trade_date):
+    def __init__(self,testapp, trade_date, order_id_offset):
         EScontract = Contract()
         EScontract.symbol = "ES"
         EScontract.secType = "FUT"
@@ -2688,10 +2689,14 @@ class ESDynamicStraddleStrategy(Object):
             elif msg_type == "es_quote":
                 tickType = msg[1]
                 price = msg[2]
-                if tickType == TickTypeEnum.BID:
-                    self.updateESPrice(tickType, price)
-                current_time = datetime.datetime.now()
-                self.log_file_handle.write("ES quote received. tickType:" + str(tickType) + " price:" + str(price) + " time:" + str(current_time) + "\n")
+                if price > 0:
+                    if tickType == TickTypeEnum.BID:
+                        self.updateESPrice(tickType, price)
+                    current_time = datetime.datetime.now()
+                    self.log_file_handle.write("ES quote received. tickType:" + str(tickType) + " price:" + str(price) + " time:" + str(current_time) + "\n")
+                else:
+                    print("ES quote received with price <=0. Ignoring, time:", current_time)
+                    self.log_file_handle.write("ES quote received with price <=0. Ignoring, time:" + str(current_time) + "\n")
 
             self.call_stplmt_open_orders_tuples_active = False
             self.put_stplmt_open_orders_tuples_active = False
@@ -2895,7 +2900,7 @@ class ESDynamicStraddleStrategy(Object):
                     self.cancelpendingstplmtorder(strike, "C")
                     self.cancelpendingstplmtprofitorder(strike, "C")
                     print("strike", strike, "position:", position, "strike_call_bracket_order_stplmt_quantity:", strike_call_bracket_order_stplmt_quantity, "strike_call_bracket_order_profit_quantity:", strike_call_bracket_order_profit_quantity)
-                    self.log_file_handle.write("strike", strike, "position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "strike_call_bracket_order_profit_quantity:" + str(strike_call_bracket_order_profit_quantity) + "\n")
+                    self.log_file_handle.write("strike" + str(strike) + "position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "strike_call_bracket_order_profit_quantity:" + str(strike_call_bracket_order_profit_quantity) + "\n")
                     print("Unequal bracket profit and stplmt legs: cancelling call profit and loss orders for strike:", strike)
                     self.log_file_handle.write("Unequal bracket profit and stplmt legs: cancelling call profit and loss orders for strike:" + str(strike) + "\n")
                     time.sleep(self.intra_order_sleep_time_ms/1000)
@@ -4619,7 +4624,7 @@ def main():
                                dest="global_cancel", default=False,
                                help="whether to trigger a globalCancel req")
     cmdLineParser.add_argument("-d", "--trade-date", action="store", type=str,
-                               dest="trade_date", default="20240508", help="trade exp date in yyyymmdd str format")
+                               dest="trade_date", default="20240509", help="trade exp date in yyyymmdd str format")
     cmdLineParser.add_argument("-id", "--client-id", action="store", type=int,
                                dest="client_id", default=0, help="client id to use")
     args = cmdLineParser.parse_args()
@@ -4660,11 +4665,12 @@ def main():
 
     alive = True
     client_id = args.client_id
+    order_id_offset = 10000 * client_id
     while alive:
         try:
             #if client_id > 0:
             #    time.sleep(60)
-            app = TestApp(trade_date)
+            app = TestApp(trade_date, order_id_offset)
             if args.global_cancel:
                 app.globalCancelOnly = True
             # ! [connect]
