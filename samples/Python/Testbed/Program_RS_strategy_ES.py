@@ -43,7 +43,8 @@ from ibapi.scanner import ScanData
 
 import threading
 import queue
-
+import winsound
+        
 def SetupLogger():
     if not os.path.exists("log"):
         os.makedirs("log")
@@ -216,10 +217,10 @@ class spxwPosition(Object):
 
 # ! [socket_init]
 class TestApp(TestWrapper, TestClient):
-    def __init__(self):
+    def __init__(self, trade_date):
         TestWrapper.__init__(self)
         TestClient.__init__(self, wrapper=self)
-        self.ESDynamicStraddleStrategy = ESDynamicStraddleStrategy(self)
+        self.ESDynamicStraddleStrategy = ESDynamicStraddleStrategy(self, trade_date)
         # ! [socket_init]
         self.nKeybInt = 0
         self.started = False
@@ -2431,13 +2432,13 @@ class TestApp(TestWrapper, TestClient):
     # ! [userinfo]
 
 class ESDynamicStraddleStrategy(Object):
-    def __init__(self,testapp):
+    def __init__(self,testapp, trade_date):
         EScontract = Contract()
         EScontract.symbol = "ES"
         EScontract.secType = "FUT"
         EScontract.exchange = "CME"
         EScontract.currency = "USD"
-        EScontract.lastTradeDateOrContractMonth = "202406"
+        EScontract.lastTradeDateOrContractMonth = "20240621"
 
         self.EScontract = EScontract
         self.lastESPrice = None
@@ -2445,7 +2446,7 @@ class ESDynamicStraddleStrategy(Object):
         self.priceDirection = None #1 for up, -1 for down, 0 for no change
         self.testapp = testapp
         
-        self.OptionTradeDate = "20240503"
+        self.OptionTradeDate = trade_date
         self.short_call_option_positions = {}  #key is strike, value is position
         self.long_call_option_positions = {} #key is strike, value is position
         self.short_put_option_positions = {}  #key is strike, value is position
@@ -2496,7 +2497,7 @@ class ESDynamicStraddleStrategy(Object):
         self.es_contract_multiplier = 50
         self.positions_can_start_trading = False
         self.orders_can_start_trading = False
-        self.rs_hedge_divisor = 20
+        self.rs_hedge_divisor = 15
         self.state_seq_id = 0 #increment upon entering a up or down direction state. All orders of same category (e.g. short call at straddle strike) will use this seq id as part of its OCO tag so that if order is placed multiple times while in current state (due to glitches), only one will execute
         #read state_seq_id from file
         self.last_heartbeat_time = datetime.datetime.now()
@@ -2539,6 +2540,9 @@ class ESDynamicStraddleStrategy(Object):
         self.hedge_range_upper_strike = 0
         self.hedge_start_sperpos_multiplier = 3    
         
+        #Dynamic delta1 hedging
+        self.enable_dynamic_delta1_hedging = True
+        self.max_dynamic_delta1_hedge_positions = self.hedge_position_allowance #so that the extra margin will be capped by extra 2*sr1 hedges
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
         assert reqContract.symbol == "ES" and reqContract.secType == "FOP" and reqContract.lastTradeDateOrContractMonth == self.OptionTradeDate
@@ -2817,7 +2821,7 @@ class ESDynamicStraddleStrategy(Object):
                     call_profit_order_target_price = math.ceil(call_profit_order_target_price * 4) / 4
                 else:
                     call_profit_order_target_price = math.ceil(call_profit_order_target_price * 20) / 20
-                call_stop_order_stop_price = position_price + self.stop_loss_increment
+                call_stop_order_stop_price = self.stop_loss_increment
                 if call_stop_order_stop_price >= 10:
                     call_stop_order_stop_price = round(call_stop_order_stop_price * 4) / 4
                 else:
@@ -2972,7 +2976,7 @@ class ESDynamicStraddleStrategy(Object):
                     put_profit_order_target_price = math.ceil(put_profit_order_target_price * 4) / 4
                 else:
                     put_profit_order_target_price = math.ceil(put_profit_order_target_price * 20) / 20
-                put_stop_order_stop_price = position_price + self.stop_loss_increment
+                put_stop_order_stop_price = self.stop_loss_increment
                 if put_stop_order_stop_price >= 10:
                     put_stop_order_stop_price = round(put_stop_order_stop_price * 4) / 4
                 else:
@@ -3163,6 +3167,106 @@ class ESDynamicStraddleStrategy(Object):
         print("range_lower_strike:", self.range_lower_strike, "range_upper_strike:", self.range_upper_strike, "total_S:", self.total_S, "total_R:", self.total_R, "position_count:", self.position_count, "hedge_range_lower_strike:", self.hedge_range_lower_strike, "hedge_range_upper_strike:", self.hedge_range_upper_strike, "hedge_total_S:", self.hedge_total_S, "hedge_total_R:", self.hedge_total_R, "hedge_position_count:", self.hedge_position_count, "price:", newESPrice, "time:", current_time)
         self.log_file_handle.write("range_lower_strike:" + str(self.range_lower_strike) + "range_upper_strike:" + str(self.range_upper_strike) + "total_S:" + str(self.total_S) + "total_R:" + str(self.total_R) + "position_count:" + str(self.position_count) + "hedge_range_lower_strike:" + str(self.hedge_range_lower_strike) + "hedge_range_upper_strike:" + str(self.hedge_range_upper_strike) + "hedge_total_S:" + str(self.hedge_total_S) + "hedge_total_R:" + str(self.hedge_total_R) + "hedge_position_count:" + str(self.hedge_position_count) + "price:" + str(newESPrice) + "time:" + str(current_time) + "\n")
 
+        #Dynamic delta1 hedging
+        if self.enable_dynamic_delta1_hedging and self.position_count > 0:
+           #calculate range boundaries, average S and average R
+            position_count = 0
+            av_sr1 = 2*self.total_S/self.position_count
+            delta1_hedge_buy_needed_count = 0
+            delta1_hedge_sell_needed_count = 0
+            delta1_hedge_position_count = 0
+            persistent_delta1_hedge_position_adjustment = 0
+            persistent_delta1_hedge_position_count_filename = "persistent_delta1_hedge_position_count_" + self.OptionTradeDate + ".txt"
+            if os.path.exists(persistent_delta1_hedge_position_count_filename):
+                with open(persistent_delta1_hedge_position_count_filename, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if len(line) == 0:
+                            continue
+                        delta1_hedge_position_count = int(line)
+            for key, (right, local_S) in persistent_short_pos_map.items():
+                position_count = position_count + 1
+                strike_str, right = key.split("_")
+                strike = float(strike_str)
+                #check if position is in loss at least by sr1
+                if right == "C":
+                    if newESPrice - strike > av_sr1:
+                        delta1_hedge_buy_needed_count = delta1_hedge_buy_needed_count + 1
+                        print("opening buy delta1 hedge order for call strike:", strike, "price:", newESPrice, "time:", current_time)
+                        self.log_file_handle.write("opening buy delta1 hedge order for call strike:" + str(strike) + "price:" + str(newESPrice) + "time:" + str(current_time) + "\n")
+                    if newESPrice - strike > 2*av_sr1 and delta1_hedge_position_count > 0:
+                        delta1_hedge_sell_needed_count = delta1_hedge_sell_needed_count + 1
+                        print("closing delta1 hedge order for call strike:", strike, "price:", newESPrice, "time:", current_time)
+                        self.log_file_handle.write("closing delta1 hedge order for call strike:" + str(strike) + "price:" + str(newESPrice) + "time:" + str(current_time) + "\n")
+                else:
+                    if strike - newESPrice > av_sr1:
+                        delta1_hedge_sell_needed_count = delta1_hedge_sell_needed_count + 1
+                        print("opening sell delta1 hedge order for put strike:", strike, "price:", newESPrice, "time:", current_time)
+                        self.log_file_handle.write("opening sell delta1 hedge order for put strike:" + str(strike) + "price:" + str(newESPrice) + "time:" + str(current_time) + "\n")
+                    if strike - newESPrice > 2*av_sr1 and delta1_hedge_position_count < 0:
+                        delta1_hedge_buy_needed_count = delta1_hedge_buy_needed_count + 1
+                        print("closing delta1 hedge order for put strike:", strike, "price:", newESPrice, "time:", current_time)
+                        self.log_file_handle.write("closing delta1 hedge order for put strike:" + str(strike) + "price:" + str(newESPrice) + "time:" + str(current_time) + "\n")
+
+            if (max(delta1_hedge_buy_needed_count - delta1_hedge_sell_needed_count, 0) > max(delta1_hedge_position_count,0)) and (delta1_hedge_buy_needed_count - delta1_hedge_sell_needed_count <= self.max_dynamic_delta1_hedge_positions):
+                #create a buy delta1 hedge order
+                delta1_hedge_order_buy_quantity = delta1_hedge_buy_needed_count - delta1_hedge_sell_needed_count - delta1_hedge_position_count
+                #buy ES contract
+                delta1_hedge_order = Order()
+                delta1_hedge_order.action = "BUY"
+                delta1_hedge_order.orderType = "MKT"
+                delta1_hedge_order.totalQuantity = delta1_hedge_order_buy_quantity
+                delta1_hedge_order.account = self.place_orders_to_account
+                #place the order
+                delta1_hedge_contract = Contract()
+                delta1_hedge_contract.symbol = "ES"
+                delta1_hedge_contract.secType = "FUT"
+                delta1_hedge_contract.exchange = "CME"
+                delta1_hedge_contract.currency = "USD"
+                delta1_hedge_contract.lastTradeDateOrContractMonth = "20240621"
+                reqId = self.testapp.nextOrderId()
+                self.testapp.placeOrder(reqId, delta1_hedge_contract, delta1_hedge_order)
+                persistent_delta1_hedge_position_adjustment = delta1_hedge_order_buy_quantity
+                print("delta1_hedge_order_buy_quantity:", delta1_hedge_order_buy_quantity, "delta1_hedge_position_count:", delta1_hedge_position_count, "delta1_hedge_buy_needed_count:", delta1_hedge_buy_needed_count, "delta1_hedge_sell_needed_count:", delta1_hedge_sell_needed_count, "placing ES buy order count:", delta1_hedge_order_buy_quantity, "price:", newESPrice, "time:", current_time)
+                self.log_file_handle.write("delta1_hedge_order_buy_quantity:" + str(delta1_hedge_order_buy_quantity) + "delta1_hedge_position_count:" + str(delta1_hedge_position_count) + "delta1_hedge_buy_needed_count:" + str(delta1_hedge_buy_needed_count) + "delta1_hedge_sell_needed_count:" + str(delta1_hedge_sell_needed_count) + "placing ES buy order count:" + str(delta1_hedge_order_buy_quantity) + "price:" + str(newESPrice) + "time:" + str(current_time) + "\n")
+            elif (max(delta1_hedge_sell_needed_count - delta1_hedge_buy_needed_count,0) > max(-delta1_hedge_position_count,0)) and (delta1_hedge_sell_needed_count - delta1_hedge_buy_needed_count <= self.max_dynamic_delta1_hedge_positions):
+                #create a sell delta1 hedge order
+                delta1_hedge_order_sell_quantity = -(delta1_hedge_sell_needed_count - delta1_hedge_buy_needed_count - delta1_hedge_position_count)
+                #sell ES contract
+                delta1_hedge_order = Order()
+                delta1_hedge_order.action = "SELL"
+                delta1_hedge_order.orderType = "MKT"
+                delta1_hedge_order.totalQuantity = delta1_hedge_order_sell_quantity
+                delta1_hedge_order.account = self.place_orders_to_account
+                #place the order
+                delta1_hedge_contract = Contract()
+                delta1_hedge_contract.symbol = "ES"
+                delta1_hedge_contract.secType = "FUT"
+                delta1_hedge_contract.exchange = "CME"
+                delta1_hedge_contract.currency = "USD"
+                delta1_hedge_contract.lastTradeDateOrContractMonth = "20240621"
+                reqId = self.testapp.nextOrderId()
+                self.testapp.placeOrder(reqId, delta1_hedge_contract, delta1_hedge_order)
+                persistent_delta1_hedge_position_adjustment = -delta1_hedge_order_sell_quantity
+                print("delta1_hedge_order_sell_quantity:", delta1_hedge_order_sell_quantity, "delta1_hedge_position_count:", delta1_hedge_position_count, "delta1_hedge_buy_needed_count:", delta1_hedge_buy_needed_count, "delta1_hedge_sell_needed_count:", delta1_hedge_sell_needed_count, "placing ES sell order count:", delta1_hedge_order_sell_quantity)
+                self.log_file_handle.write("delta1_hedge_order_sell_quantity:" + str(delta1_hedge_order_sell_quantity) + "delta1_hedge_position_count:" + str(delta1_hedge_position_count) + "delta1_hedge_buy_needed_count:" + str(delta1_hedge_buy_needed_count) + "delta1_hedge_sell_needed_count:" + str(delta1_hedge_sell_needed_count) + "placing ES sell order count:" + str(delta1_hedge_order_sell_quantity) + "\n")
+            #update the delta1_hedge_position_count
+            delta1_hedge_position_count = delta1_hedge_position_count + persistent_delta1_hedge_position_adjustment
+            with open(persistent_delta1_hedge_position_count_filename, "w") as f:
+                f.write(str(delta1_hedge_position_count))
+                print("updating file delta1_hedge_position_count:", delta1_hedge_position_count, " at time:", current_time)
+                self.log_file_handle.write("updating file delta1_hedge_position_count:" + str(delta1_hedge_position_count) + " at time:" + str(current_time) + "\n")
+            #just double checking that bounds are obeyed
+            if delta1_hedge_position_count > self.max_dynamic_delta1_hedge_positions or delta1_hedge_position_count < -self.max_dynamic_delta1_hedge_positions:
+                print("delta1_hedge_position_count:", delta1_hedge_position_count, "exceeds max_dynamic_delta1_hedge_positions:", self.max_dynamic_delta1_hedge_positions)
+                self.log_file_handle.write("delta1_hedge_position_count:" + str(delta1_hedge_position_count) + "exceeds max_dynamic_delta1_hedge_positions:" + str(self.max_dynamic_delta1_hedge_positions) + "\n")
+                #play alarm sound
+                soundfilename = "C:\Windows\Media\Ring05.wav"
+                for i in range(30):
+                    winsound.PlaySound(soundfilename, winsound.SND_FILENAME)
+                    time.sleep(1)
+
+
     def updateESPrice(self, tickType, newESPrice):
         testapp = self.testapp
         #process messages from the IB queue
@@ -3221,7 +3325,7 @@ class ESDynamicStraddleStrategy(Object):
                 is_call_subscription_needed = True
                 is_put_subscription_needed = True
                 call_strike = floor(self.range_lower_strike + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count) - floor(self.range_lower_strike + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count) % 5 + strike_off
-                put_strike = floor(self.range_upper_strike - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count) - floor(self.range_upper_strike - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count) % 5 + strike_off
+                put_strike = floor(self.range_upper_strike - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count) - floor(self.range_upper_strike - self.hedge_start_sperpos_multiplier*self.total_S/self.position_count) % 5 - strike_off
                 if call_strike in self.ES_FOP_quote_bid_call and self.ES_FOP_quote_bid_call_time[call_strike] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit):
                     is_call_subscription_needed = False
                 if call_strike in self.ES_FOP_quote_ask_call and self.ES_FOP_quote_ask_call_time[call_strike] > current_time - datetime.timedelta(seconds=self.quote_time_lag_limit):
@@ -3391,11 +3495,11 @@ class ESDynamicStraddleStrategy(Object):
                 #first, close all short call positions with strike price less than lastESPrice_ that are outside straddle range
                 straddle_range = straddle_call_price + straddle_put_price
                 if straddle_range > 0 and quotes_available:
-                    self.stop_loss_increment = math.ceil(straddle_range)
+                    self.stop_loss_increment = math.ceil(2*straddle_range)
                     if self.position_count > 0:
                         self.stop_loss_increment = math.ceil(4*self.total_S/self.position_count)
-                    print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
-                    self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                    print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "total_S:", self.total_S, "position_count:", self.position_count, "time:", current_time)
+                    self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "total_S:" + str(self.total_S) + "position_count:" + str(self.position_count) + "time:" + str(current_time) + "\n")
                 else:
                     print("straddle_range is zero or quotes are not available, not setting stop loss increment", "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
                     self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
@@ -3548,7 +3652,8 @@ class ESDynamicStraddleStrategy(Object):
                             #range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start_f = self.range_lower_strike - lastESPrice_ + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
-                        limit_price = straddle_range / self.rs_hedge_divisor
+                        limit_price_min = straddle_range / self.rs_hedge_divisor
+                        limit_price = limit_price_min
                         lp = limit_price
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             for limit_price_ramp in reversed(range(1,4,1)):
@@ -3561,7 +3666,7 @@ class ESDynamicStraddleStrategy(Object):
                                     if spread_ok_for_trade:
                                         limit_price_ = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
                                     #cap the limit price to rs_hedge_divisor fraction of straddle range
-                                    limit_price = min(limit_price_, straddle_range / self.rs_hedge_divisor)
+                                    limit_price = min(limit_price_, limit_price_min)
                                 else:    
                                     #if lp/limit_price_ramp < 0.20:
                                     continue
@@ -3580,6 +3685,9 @@ class ESDynamicStraddleStrategy(Object):
                                 up_call_buy_order.transmit = self.transmit_orders
                                 up_call_buy_order_tuple = (lastESPrice_ + offset, up_call_buy_order)
                                 up_call_buy_OCA_order_tuples.append(up_call_buy_order_tuple)
+                                #issue only one order at limit price min per strike
+                                if limit_price == limit_price_min:
+                                    break
                         up_call_buy_OCA_orders = [o for _strike, o in up_call_buy_OCA_order_tuples]
                         oco_tag_ = "UpCallBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(str(oco_tag_), up_call_buy_OCA_orders, 2)
@@ -3625,7 +3733,8 @@ class ESDynamicStraddleStrategy(Object):
                             #range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start_f = self.range_upper_strike - lastESPrice_ + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
-                        limit_price = straddle_range / self.rs_hedge_divisor
+                        limit_price_min = straddle_range / self.rs_hedge_divisor
+                        limit_price = limit_price_min
                         lp = limit_price
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             for limit_price_ramp in reversed(range(1,4,1)):
@@ -3638,7 +3747,7 @@ class ESDynamicStraddleStrategy(Object):
                                     if spread_ok_for_trade:
                                         limit_price_ = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
                                     #cap the limit price to rs_hedge_divisor fraction of straddle range
-                                    limit_price = min(limit_price_, straddle_range / self.rs_hedge_divisor)
+                                    limit_price = min(limit_price_, limit_price_min)
                                 else:
                                     #if lp/limit_price_ramp < 0.20:
                                     continue
@@ -3657,6 +3766,9 @@ class ESDynamicStraddleStrategy(Object):
                                 up_put_buy_order.transmit = self.transmit_orders
                                 up_put_buy_order_tuple = (lastESPrice_ - offset, up_put_buy_order)
                                 up_put_buy_OCA_order_tuples.append(up_put_buy_order_tuple)
+                                #issue only one order at limit price min per strike
+                                if limit_price == limit_price_min:
+                                    break
                         up_put_buy_OCA_orders = [o for _strike, o in up_put_buy_OCA_order_tuples]
                         oco_tag_ = "UpPutBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(str(oco_tag_), up_put_buy_OCA_orders, 2)
@@ -3781,11 +3893,11 @@ class ESDynamicStraddleStrategy(Object):
                 straddle_range = straddle_call_price + straddle_put_price
                 
                 if straddle_range > 0 and quotes_available:
-                    self.stop_loss_increment = math.ceil(straddle_range)
+                    self.stop_loss_increment = math.ceil(2*straddle_range)
                     if self.position_count > 0:
                         self.stop_loss_increment = math.ceil(4*self.total_S/self.position_count)
-                    print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
-                    self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
+                    print("setting stop loss increment to:", self.stop_loss_increment, "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "total_S:", self.total_S, "position_count:", self.position_count, "time:", current_time)
+                    self.log_file_handle.write("setting stop loss increment to:" + str(self.stop_loss_increment) + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "total_S:" + str(self.total_S) + "position_count:" + str(self.position_count) + "time:" + str(current_time) + "\n")
                 else:
                     print("straddle_range is zero or quotes are not available, not setting stop loss increment", "straddle_range:", straddle_range, "quotes_available:", quotes_available, "state_seq_id:", self.state_seq_id, "time:", current_time)
                     self.log_file_handle.write("straddle_range is zero or quotes are not available, not setting stop loss increment" + "straddle_range:" + str(straddle_range) + "quotes_available:" + str(quotes_available) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
@@ -3938,7 +4050,8 @@ class ESDynamicStraddleStrategy(Object):
                             #range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start_f = self.range_lower_strike - lastESPrice_ + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
-                        limit_price = straddle_range / self.rs_hedge_divisor
+                        limit_price_min = straddle_range / self.rs_hedge_divisor
+                        limit_price = limit_price_min
                         lp = limit_price
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             for limit_price_ramp in reversed(range(1,4,1)):
@@ -3951,7 +4064,7 @@ class ESDynamicStraddleStrategy(Object):
                                     if spread_ok_for_trade:
                                         limit_price_ = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
                                     #cap the limit price to rs_hedge_divisor fraction of straddle range
-                                    limit_price = min(limit_price_, straddle_range / self.rs_hedge_divisor)
+                                    limit_price = min(limit_price_, limit_price_min)
                                 else:
                                     #if lp/limit_price_ramp < 0.20:
                                     continue
@@ -3969,6 +4082,9 @@ class ESDynamicStraddleStrategy(Object):
                                 down_call_buy_order.transmit = self.transmit_orders
                                 down_call_buy_order_tuple = (lastESPrice_ + offset, down_call_buy_order)
                                 down_call_buy_OCA_order_tuples.append(down_call_buy_order_tuple)
+                                #issue only one order at limit price min per strike
+                                if limit_price == limit_price_min:
+                                    break
                         down_call_buy_OCA_orders = [o for _strike, o in down_call_buy_OCA_order_tuples]
                         oco_tag_ = "DownCallBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(str(oco_tag_), down_call_buy_OCA_orders, 2)
@@ -4014,7 +4130,8 @@ class ESDynamicStraddleStrategy(Object):
                             #range_start_f = (self.range_upper_strike - self.range_lower_strike)/2 + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start_f = self.range_upper_strike - lastESPrice_ + self.hedge_start_sperpos_multiplier*self.total_S/self.position_count #straddle posision size is half of position count, using 2*s for range
                             range_start = floor(range_start_f) - floor(range_start_f) % 5
-                        limit_price = straddle_range / self.rs_hedge_divisor
+                        limit_price_min = straddle_range / self.rs_hedge_divisor
+                        limit_price = limit_price_min
                         lp = limit_price
                         for offset in range(range_start, range_start+self.hedge_outer_offset, 5):
                             for limit_price_ramp in reversed(range(1,4,1)):
@@ -4027,7 +4144,7 @@ class ESDynamicStraddleStrategy(Object):
                                     if spread_ok_for_trade:
                                         limit_price_ = (bid_price + ask_price)/2 - 0.05 + 0.05 * limit_price_ramp
                                     #cap the limit price to rs_hedge_divisor fraction of straddle range
-                                    limit_price = min(limit_price_, straddle_range / self.rs_hedge_divisor)
+                                    limit_price = min(limit_price_, limit_price_min)
                                 else:
                                     #if lp/limit_price_ramp < 0.20:
                                     continue
@@ -4045,6 +4162,9 @@ class ESDynamicStraddleStrategy(Object):
                                 down_put_buy_order.transmit = self.transmit_orders
                                 down_put_buy_order_tuple = (lastESPrice_ - offset, down_put_buy_order)
                                 down_put_buy_OCA_order_tuples.append(down_put_buy_order_tuple)
+                                #issue only one order at limit price min per strike
+                                if limit_price == limit_price_min:
+                                    break
                         down_put_buy_OCA_orders = [o for _strike, o in down_put_buy_OCA_order_tuples]
                         oco_tag_ = "DownPutBuyWingOCO_" + self.OptionTradeDate + "_" + str(self.state_seq_id)
                         OrderSamples.OneCancelsAll(oco_tag_, down_put_buy_OCA_orders, 2)
@@ -4115,7 +4235,7 @@ class ESDynamicStraddleStrategy(Object):
                             short_put_option_to_open_profit_order_limit_price = math.ceil(short_put_option_to_open_profit_order_limit_price * 4) / 4
                         else:
                             short_put_option_to_open_profit_order_limit_price = math.ceil(short_put_option_to_open_profit_order_limit_price * 20) / 20
-                        short_put_option_to_open_profit_order_stop_price = limit_price + self.stop_loss_increment
+                        short_put_option_to_open_profit_order_stop_price = self.stop_loss_increment
                         if short_put_option_to_open_profit_order_stop_price >= 10:
                             short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 4) / 4
                         else:
@@ -4201,7 +4321,7 @@ class ESDynamicStraddleStrategy(Object):
                             short_call_option_to_open_profit_order_limit_price = math.ceil(short_call_option_to_open_profit_order_limit_price * 4) / 4
                         else:
                             short_call_option_to_open_profit_order_limit_price = math.ceil(short_call_option_to_open_profit_order_limit_price * 20) / 20
-                        short_call_option_to_open_profit_order_stop_price = limit_price + self.stop_loss_increment
+                        short_call_option_to_open_profit_order_stop_price = self.stop_loss_increment
                         if short_call_option_to_open_profit_order_stop_price >= 10:
                             short_call_option_to_open_profit_order_stop_price = round(short_call_option_to_open_profit_order_stop_price * 4) / 4
                         else:
@@ -4295,7 +4415,7 @@ class ESDynamicStraddleStrategy(Object):
                             short_put_option_to_open_profit_order_limit_price = math.ceil(short_put_option_to_open_profit_order_limit_price * 4) / 4
                         else:
                             short_put_option_to_open_profit_order_limit_price = math.ceil(short_put_option_to_open_profit_order_limit_price * 20) / 20
-                        short_put_option_to_open_profit_order_stop_price = limit_price + self.stop_loss_increment
+                        short_put_option_to_open_profit_order_stop_price = self.stop_loss_increment
                         if short_put_option_to_open_profit_order_stop_price >= 10:
                             short_put_option_to_open_profit_order_stop_price = round(short_put_option_to_open_profit_order_stop_price * 4) / 4
                         else:
@@ -4356,7 +4476,7 @@ class ESDynamicStraddleStrategy(Object):
                             short_call_option_to_open_profit_order_limit_price = math.ceil(short_call_option_to_open_profit_order_limit_price * 4) / 4
                         else:
                             short_call_option_to_open_profit_order_limit_price = math.ceil(short_call_option_to_open_profit_order_limit_price * 20) / 20
-                        short_call_option_to_open_profit_order_stop_price = limit_price + self.stop_loss_increment
+                        short_call_option_to_open_profit_order_stop_price = self.stop_loss_increment
                         if short_call_option_to_open_profit_order_stop_price >= 10:
                             short_call_option_to_open_profit_order_stop_price = round(short_call_option_to_open_profit_order_stop_price * 4) / 4
                         else:
@@ -4464,6 +4584,12 @@ def status_monitor(status_queue_, log_file_handle_):
         while not stop_thread:
             while not status_queue_.empty():
                 last_heartbeat_time = status_queue_.get()
+            current_time = datetime.datetime.now()
+            #do not raise alarm between 2-3pm Pacific time
+            if current_time.hour == 14 and current_time.minute >= 0 and current_time.minute <= 59:
+                alarm_on = False
+                time.sleep(1)
+                continue
             if (datetime.datetime.now() - last_heartbeat_time).total_seconds() > 180:
                 if not alarm_on:
                     alarm_on = True
@@ -4492,11 +4618,16 @@ def main():
     cmdLineParser.add_argument("-C", "--global-cancel", action="store_true",
                                dest="global_cancel", default=False,
                                help="whether to trigger a globalCancel req")
+    cmdLineParser.add_argument("-d", "--trade-date", action="store", type=str,
+                               dest="trade_date", default="20240508", help="trade exp date in yyyymmdd str format")
+    cmdLineParser.add_argument("-id", "--client-id", action="store", type=int,
+                               dest="client_id", default=0, help="client id to use")
     args = cmdLineParser.parse_args()
     print("Using args", args)
     logging.debug("Using args %s", args)
     # print(args)
 
+    trade_date = args.trade_date
 
     # enable logging when member vars are assigned
     from ibapi import utils
@@ -4528,12 +4659,12 @@ def main():
 
 
     alive = True
-    client_id = 0
+    client_id = args.client_id
     while alive:
         try:
             #if client_id > 0:
             #    time.sleep(60)
-            app = TestApp()
+            app = TestApp(trade_date)
             if args.global_cancel:
                 app.globalCancelOnly = True
             # ! [connect]
@@ -4562,6 +4693,8 @@ def main():
                     soundfilename = "C:\Windows\Media\Ring05.wav"
                     #play soundfilename file
                     winsound.PlaySound(soundfilename, winsound.SND_FILENAME)
+                if waited_seconds > 60:
+                    break
                 time.sleep(1)
 
             # ! [clientrun]
@@ -4598,6 +4731,7 @@ def main():
         finally:
             stop_thread = True
             current_time = datetime.datetime.now()
+            print("disconnecting at time:", current_time)
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                 app.ESDynamicStraddleStrategy.log_file_handle.write("disconnecting at time:" + str(current_time) + "\n")
             #try:
