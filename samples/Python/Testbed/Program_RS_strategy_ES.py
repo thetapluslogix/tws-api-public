@@ -394,17 +394,7 @@ class TestApp(TestWrapper, TestClient):
 
     def nextOrderId(self):
         #nextvalidOrderId is globally stored persistently in a file. each client process atomically updates the file to get the next valid order id
-        global_orderid_filename = "global_orderid_" + str(self.ESDynamicStraddleStrategy.OptionTradeDate) + ".txt"
-        #do an atomic read modify write to get the next valid order id
-        with open(global_orderid_filename, 'r+') as f:
-            while True:
-                order_id = int(f.readline())
-                f.seek(0)
-                f.write(str(order_id + 1))
-                f.truncate()
-                f.flush()
-                f.close()
-                return order_id
+        
         #wait for nextValidOrderId to be updated
         while False and self.order_id_is_stale:
             self.reqIds(-1)
