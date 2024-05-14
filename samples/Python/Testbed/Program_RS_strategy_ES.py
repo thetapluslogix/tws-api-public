@@ -252,8 +252,6 @@ class TestApp(TestWrapper, TestClient):
         
         self.message_from_ib_queue = queue.Queue()
         self.order_id_offset = order_id_offset
-        self.order_id_is_stale = True
-
 
 
     def dumpTestCoverageSituation(self):
@@ -291,8 +289,8 @@ class TestApp(TestWrapper, TestClient):
             self.nextValidOrderId = orderId
         else:
             self.nextValidOrderId = max(self.nextValidOrderId, orderId)
-            self.order_id_is_stale = False
         current_time = datetime.datetime.now()
+        self.message_from_ib_queue.put("new_valid_id", self.nextValidOrderId)
         print("NextValidId:", self.nextValidOrderId, "at", current_time)
         self.ESDynamicStraddleStrategy.log_file_handle.write("NextValidId: %s at %s\n" % (self.nextValidOrderId, current_time))
     # ! [nextvalidid]
@@ -396,17 +394,18 @@ class TestApp(TestWrapper, TestClient):
         #nextvalidOrderId is globally stored persistently in a file. each client process atomically updates the file to get the next valid order id
         
         #wait for nextValidOrderId to be updated
-        while False and self.order_id_is_stale:
-            self.reqIds(-1)
-            time.sleep(0.1)
-            print("Waiting for nextValidOrderId to be updated")
-            self.ESDynamicStraddleStrategy.log_file_handle.write("Waiting for nextValidOrderId to be updated\n")
+        #while self.ESDynamicStraddleStrategy.order_id_is_stale:
+        #    self.reqIds(-1)
+        #    time.sleep(0.1)
+        #    print("Waiting for nextValidOrderId to be updated")
+        #    self.ESDynamicStraddleStrategy.log_file_handle.write("Waiting for nextValidOrderId to be updated\n")
+        
         oid = self.nextValidOrderId
         self.nextValidOrderId += 1
         current_time = datetime.datetime.now()
-        print("returning nextValidOrderId:", oid, "order_id_is_stale:", self.order_id_is_stale, "at", current_time)
-        self.ESDynamicStraddleStrategy.log_file_handle.write("returning nextValidOrderId: %s order_id_is_stale: %s at %s\n" % (oid, self.order_id_is_stale, current_time))
-        self.order_id_is_stale = True
+        print("returning nextValidOrderId:", oid, "at", current_time)
+        self.ESDynamicStraddleStrategy.log_file_handle.write("returning nextValidOrderId: %s at %s\n" % (oid, current_time))
+        self.ESDynamicStraddleStrategy.order_id_is_stale = True
         #self.reqIds(-1)
         return oid
 
@@ -423,6 +422,7 @@ class TestApp(TestWrapper, TestClient):
             #write ESDynamicStraddleStrategy log file
             self.ESDynamicStraddleStrategy.log_file_handle.write("Error. Id: %s Code: %s Msg: %s\n" % (reqId, errorCode, errorString))
 
+        self.message_from_ib_queue.put(("error", reqId, errorCode, errorString, advancedOrderRejectJson))
     # ! [error] self.reqId2nErr[reqId] += 1
 
 
@@ -449,7 +449,7 @@ class TestApp(TestWrapper, TestClient):
         
         #order.contract = contract
         self.permId2ord[order.permId] = order
-
+        
     # ! [openorder]
 
     @iswrapper
@@ -960,7 +960,7 @@ class TestApp(TestWrapper, TestClient):
         #print("TickPrice. TickerId:", reqId, "tickType:", tickType, "Price:", floatMaxString(price), "Attribs:", attrib)
         if reqContract.secType == "FUT" and reqContract.symbol == "ES":
             #post price update to ESDynamicStraddleStrategy
-            if tickType == TickTypeEnum.BID or tickType == TickTypeEnum.ASK or tickType == TickTypeEnum.LAST:
+            if tickType == TickTypeEnum.BID or tickType == TickTypeEnum.ASK or tickType == TickTypeEnum.LAST or tickType == TickTypeEnum.BID_SIZE or tickType == TickTypeEnum.ASK_SIZE or tickType == TickTypeEnum.LAST_SIZE:
                 #self.ESDynamicStraddleStrategy.updateESPrice(price,self)
                 #send to queue
                 self.message_from_ib_queue.put(("es_quote", tickType, price))
@@ -2513,7 +2513,7 @@ class ESDynamicStraddleStrategy(Object):
         self.put_bracket_profit_order_maintenance_on_hold_for_strike = {} #key is strike, value is order_id
         self.profit_target_divisor = 20
         self.min_limit_profit = 4 #minimum 4 points profit given each strike move has friction of appx 3 points
-        self.stop_loss_increment = 40 #this is dynamically adjusted based on the straddle range
+        self.stop_loss_increment = 100 #this is dynamically adjusted based on the straddle range
         self.stop_limit_increment = 2
         self.es_contract_multiplier = 50
         self.positions_can_start_trading = False
@@ -2570,6 +2570,9 @@ class ESDynamicStraddleStrategy(Object):
         #allow only one dynamic delta1 hedge policy at a time
         if self.enable_dynamic_delta1_hedging_policy1:
             self.enable_dynamic_delta1_hedging_policy2 = False
+
+        self.order_id_is_stale = True
+        self.order_queue = queue.Queue() #This queue will save each order as it is placed. Remove an order from the queue when the order id shows up in the openorders or orderstatus messages. Retry an order if the order id shows up in error message
         
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
@@ -2699,6 +2702,23 @@ class ESDynamicStraddleStrategy(Object):
                                 self.put_stplmt_profit_open_orders_tuples[contract.strike] = []
                             self.put_stplmt_profit_open_orders_tuples[contract.strike] = (order_id, contract, order, order_state)
                             self.put_bracket_profit_order_maintenance_on_hold_for_strike[contract.strike] = False
+                #check order_id against order_queue and remove the order from the queue if matches
+                #peek through the queue and remove the order if found
+                order_found = False
+                for i in range(self.order_queue.qsize()):
+                    order_queue_msg = self.order_queue.get()
+                    if order_queue_msg[0] == "place_order":
+                        _order_id = order_queue_msg[1]
+                        _contract = order_queue_msg[2]
+                        _order = order_queue_msg[3]
+                        if _order_id == order_id:
+                            order_found = True
+                            current_time = datetime.datetime.now()
+                            print("order_id found in order_queue matched in openOrder message from IB server, and the order was placed without error. Removing from queue. order_id:", order_id, " at time:", current_time)
+                            self.log_file_handle.write("order_id found in order_queue. Removing from queue. order_id:" + str(order_id) + " at time:" + str(current_time) + "\n")
+                            break #matched order is implicitly removed from the queue by not putting it back
+                    self.order_queue.put(order_queue_msg)
+
             elif msg_type == "position_end":
                 #print("position_end message received")
                 self.log_file_handle.write("position_end message received\n")
@@ -2718,12 +2738,39 @@ class ESDynamicStraddleStrategy(Object):
                 price = msg[2]
                 current_time = datetime.datetime.now()
                 if price > 0:
+                    self.updateESPrice(tickType, price)
                     if tickType == TickTypeEnum.BID:
-                        self.updateESPrice(tickType, price)
-                    self.log_file_handle.write("ES quote received. tickType:" + str(tickType) + " price:" + str(price) + " time:" + str(current_time) + "\n")
+                        self.log_file_handle.write("ES BID quote received. tickType:" + str(tickType) + " price:" + str(price) + " time:" + str(current_time) + "\n")
                 else:
                     print("ES quote received with price <=0. Ignoring, time:", current_time)
                     self.log_file_handle.write("ES quote received with price <=0. Ignoring, time:" + str(current_time) + "\n")
+            elif msg_type == "new_order_id":
+                new_order_id = msg[1]
+                self.order_id_is_stale = False
+            elif msg_type == "error":
+                _reqId = msg[1]
+                _errorCode = msg[2]
+                _errorString = msg[3]
+                _advancedOrderRejectJson = msg[4]
+                if int(_errorCode) == 103: #Duplicate Order Id
+                    #get the order from the order_queue and retry
+                    order_found = False
+                    for i in range(self.order_queue.qsize()):
+                        order_queue_msg = self.order_queue.get()
+                        if order_queue_msg[0] == "place_order":
+                            _order_id = order_queue_msg[1]
+                            _contract = order_queue_msg[2]
+                            _order = order_queue_msg[3]
+                            if _reqId == _order_id:
+                                __order_id = self.testapp.nextOrderId()
+                                self.testapp.placeOrder(__order_id, _contract, _order)
+                                self.order_queue.put(("place_order", __order_id, _contract, _order))
+                                current_time = datetime.datetime.now()
+                                print("order_id: ", _order_id,  " found in order_queue had duplicate order id error. Retrying with new order_id:", __order_id, " at time:", current_time)
+                                self.log_file_handle.write("order_id: " + str(_order_id) + " found in order_queue had duplicate order id error. Retrying with new order_id:" + str(__order_id) + " at time:" + str(current_time) + "\n")
+                                order_found = True
+                                break #matched order is implicitly removed from the queue by not putting it back
+                        self.order_queue.put(order_queue_msg)
 
             self.call_stplmt_open_orders_tuples_active = False
             self.put_stplmt_open_orders_tuples_active = False
@@ -2901,6 +2948,7 @@ class ESDynamicStraddleStrategy(Object):
                     o.account = self.place_orders_to_account
                     o_id = self.testapp.nextOrderId()
                     self.testapp.placeOrder(o_id, call_contract, o)
+                    self.order_queue.put(("place_order", o_id, call_contract, o))
                 
                 print("position:", position, "strike_call_bracket_order_stplmt_quantity:", strike_call_bracket_order_stplmt_quantity, "needed_quantity:", needed_quantity)
                 self.log_file_handle.write("position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
@@ -3057,6 +3105,7 @@ class ESDynamicStraddleStrategy(Object):
                     o.account = self.place_orders_to_account
                     o_id = self.testapp.nextOrderId()
                     self.testapp.placeOrder(o_id, put_contract, o)
+                    self.order_queue.put(("place_order", o_id, put_contract, o))
                 
                 print("position:", position, "strike_put_bracket_order_stplmt_quantity:", strike_put_bracket_order_stplmt_quantity, "needed_quantity:", needed_quantity)
                 self.log_file_handle.write("position:" + str(position) + "strike_put_bracket_order_stplmt_quantity:" + str(strike_put_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
@@ -3260,6 +3309,7 @@ class ESDynamicStraddleStrategy(Object):
                 delta1_hedge_contract.lastTradeDateOrContractMonth = "20240621"
                 reqId = self.testapp.nextOrderId()
                 self.testapp.placeOrder(reqId, delta1_hedge_contract, delta1_hedge_order)
+                self.order_queue.put(("place_order", reqId, delta1_hedge_contract, delta1_hedge_order))
                 persistent_delta1_hedge_position_adjustment = delta1_hedge_order_buy_quantity
                 print("delta1_hedge_order_buy_quantity:", delta1_hedge_order_buy_quantity, "delta1_hedge_position_count:", delta1_hedge_position_count, "delta1_hedge_buy_needed_count:", delta1_hedge_buy_needed_count, "delta1_hedge_sell_needed_count:", delta1_hedge_sell_needed_count, "placing ES buy order count:", delta1_hedge_order_buy_quantity, "price:", newESPrice, "time:", current_time)
                 self.log_file_handle.write("delta1_hedge_order_buy_quantity:" + str(delta1_hedge_order_buy_quantity) + "delta1_hedge_position_count:" + str(delta1_hedge_position_count) + "delta1_hedge_buy_needed_count:" + str(delta1_hedge_buy_needed_count) + "delta1_hedge_sell_needed_count:" + str(delta1_hedge_sell_needed_count) + "placing ES buy order count:" + str(delta1_hedge_order_buy_quantity) + "price:" + str(newESPrice) + "time:" + str(current_time) + "\n")
@@ -3281,6 +3331,7 @@ class ESDynamicStraddleStrategy(Object):
                 delta1_hedge_contract.lastTradeDateOrContractMonth = "20240621"
                 reqId = self.testapp.nextOrderId()
                 self.testapp.placeOrder(reqId, delta1_hedge_contract, delta1_hedge_order)
+                self.order_queue.put(("place_order", reqId, delta1_hedge_contract, delta1_hedge_order))
                 persistent_delta1_hedge_position_adjustment = -delta1_hedge_order_sell_quantity
                 print("delta1_hedge_order_sell_quantity:", delta1_hedge_order_sell_quantity, "delta1_hedge_position_count:", delta1_hedge_position_count, "delta1_hedge_buy_needed_count:", delta1_hedge_buy_needed_count, "delta1_hedge_sell_needed_count:", delta1_hedge_sell_needed_count, "placing ES sell order count:", delta1_hedge_order_sell_quantity)
                 self.log_file_handle.write("delta1_hedge_order_sell_quantity:" + str(delta1_hedge_order_sell_quantity) + "delta1_hedge_position_count:" + str(delta1_hedge_position_count) + "delta1_hedge_buy_needed_count:" + str(delta1_hedge_buy_needed_count) + "delta1_hedge_sell_needed_count:" + str(delta1_hedge_sell_needed_count) + "placing ES sell order count:" + str(delta1_hedge_order_sell_quantity) + "\n")
@@ -3314,6 +3365,13 @@ class ESDynamicStraddleStrategy(Object):
                 strike_str, right = key.split("_")
                 strike = float(strike_str)
 
+        #print placed orders that have not yet been acknowledged by server in openOrder message or in a 103 Dy=uplicate Order Id error message
+        #print each order in the order_queue
+        print("order_queue has ", len(self.order_queue.queue), " orders at time:", current_time)
+        self.log_file_handle.write("order_queue has " + str(len(self.order_queue.queue)) + " orders at time:" + str(current_time) + "\n")
+        for order_queue_msg in self.order_queue.queue:
+            print("    order msg in order_queue:", order_queue_msg)
+            self.log_file_handle.write("    order msg in order_queue:" + str(order_queue_msg) + "\n")
 
     def updateESPrice(self, tickType, newESPrice):
         testapp = self.testapp
@@ -3324,6 +3382,8 @@ class ESDynamicStraddleStrategy(Object):
         current_time = datetime.datetime.now()
         self.last_heartbeat_time = current_time
         self.status_queue_.put(self.last_heartbeat_time)
+        if tickType != TickTypeEnum.BID:
+            return
         for strike_off in range(-30, 30, 5):
             is_call_subscription_needed = True
             is_put_subscription_needed = True
@@ -3607,6 +3667,7 @@ class ESDynamicStraddleStrategy(Object):
                                             o.account = self.place_orders_to_account
                                             o_id = self.testapp.nextOrderId()
                                             testapp.placeOrder(o_id, short_call_option_contract_to_close, o)
+                                            self.order_queue.put(("place_order", o_id, short_call_option_contract_to_close, o))
                                             short_call_option_OCAOrderIds.append(o_id)
                                             self.log_file_handle.write("closing short call position for strike:" + str(strike) + "short_call_option_contract_to_close:" + str(short_call_option_contract_to_close) + "limit_price:" + str(_price) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                                             #caccel pending stop limit orders
@@ -3672,6 +3733,7 @@ class ESDynamicStraddleStrategy(Object):
                                             o.account = self.place_orders_to_account
                                             o_id = self.testapp.nextOrderId()
                                             testapp.placeOrder(o_id, short_put_option_contract_to_close, o)
+                                            self.order_queue.put(("place_order", o_id, short_put_option_contract_to_close, o))
                                             short_put_option_OCAOrderIds.append(o_id)
                                             self.log_file_handle.write("closing short put position for strike:" + str(strike) + "short_put_option_contract_to_close:" + str(short_put_option_contract_to_close) + "limit_price:" + str(_price) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
                                             #caccel pending stop limit orders
@@ -3759,6 +3821,7 @@ class ESDynamicStraddleStrategy(Object):
                             o.outsideRth = True
                             o_id = self.testapp.nextOrderId()
                             testapp.placeOrder(o_id, up_call_buy_option_contract, o)
+                            self.order_queue.put(("place_order", o_id, up_call_buy_option_contract, o))
                             up_call_buy_OCAOrderId = o_id
                             time.sleep(self.hedge_order_delay_multiplier * self.intra_order_sleep_time_ms/1000)
                         
@@ -3839,6 +3902,7 @@ class ESDynamicStraddleStrategy(Object):
                             o.outsideRth = True
                             o_id = self.testapp.nextOrderId()
                             testapp.placeOrder(o_id, up_put_buy_option_contract, o)
+                            self.order_queue.put(("place_order", o_id, up_put_buy_option_contract, o))
                             up_put_buy_OCAOrderId = o_id
                             print("placing put buy order for strike:", _strike, "up_put_buy_option_contract:", up_put_buy_option_contract, "limit_price:", o.lmtPrice, "state_seq_id:", self.state_seq_id, "time:", current_time)
                             self.log_file_handle.write("placing put buy order for strike:" + str(_strike) + "up_put_buy_option_contract:" + str(up_put_buy_option_contract) + "limit_price:" + str(o.lmtPrice) + "state_seq_id:" + str(self.state_seq_id) + "time:" + str(current_time) + "\n")
@@ -4009,6 +4073,7 @@ class ESDynamicStraddleStrategy(Object):
                                             o.outsideRth = True
                                             o_id = self.testapp.nextOrderId()
                                             testapp.placeOrder(o_id, short_call_option_contract_to_close, o)
+                                            self.order_queue.put(("place_order", o_id, short_call_option_contract_to_close, o))
                                             short_call_option_OCAOrderIds.append(o_id)
                                             self.log_file_handle.write("closing short call position for strike:" + str(strike) + "short_call_option_contract_to_close:" + str(short_call_option_contract_to_close) + "limit_price:" + str(_price) + "state_seq_id:" + str(self.state_seq_id) + "current_time:" + str(current_time) + "\n")
                                             #caccel pending stop limit orders
@@ -4073,6 +4138,7 @@ class ESDynamicStraddleStrategy(Object):
                                             o.outsideRth = True
                                             o_id = self.testapp.nextOrderId()
                                             testapp.placeOrder(o_id, short_put_option_contract_to_close, o)
+                                            self.order_queue.put(("place_order", o_id, short_put_option_contract_to_close, o))
                                             short_put_option_OCAOrderIds.append(o_id)
                                             self.log_file_handle.write("closing short put position for strike:" + str(strike) + "short_put_option_contract_to_close:" + str(short_put_option_contract_to_close) + "limit_price:" + str(_price) + "state_seq_id:" + str(self.state_seq_id) + "current_time:" + str(current_time) + "\n")
                                             #caccel pending stop limit orders
@@ -4158,6 +4224,7 @@ class ESDynamicStraddleStrategy(Object):
                             o.outsideRth = True
                             o_id = self.testapp.nextOrderId()
                             testapp.placeOrder(o_id, down_call_buy_option_contract, o)
+                            self.order_queue.put(("place_order", o_id, down_call_buy_option_contract, o))
                             down_call_buy_OCAOrderId = o_id
                             print("placing call buy order for strike:", _strike, "down_call_buy_option_contract:", down_call_buy_option_contract, "limit_price:", o.lmtPrice, "state_seq_id:", self.state_seq_id, "current_time:", current_time)
                             self.log_file_handle.write("placing call buy order for strike:" + str(_strike) + "down_call_buy_option_contract:" + str(down_call_buy_option_contract) + "limit_price:" + str(o.lmtPrice) + "state_seq_id:" + str(self.state_seq_id) + "current_time:" + str(current_time) + "\n")
@@ -4237,8 +4304,9 @@ class ESDynamicStraddleStrategy(Object):
                             
                             o.account = self.place_orders_to_account
                             o.outsideRth = True
-                            self.testapp.nextOrderId()
+                            o_id = self.testapp.nextOrderId()
                             testapp.placeOrder(o_id, down_put_buy_option_contract, o)
+                            self.order_queue.put(("place_order", o_id, down_put_buy_option_contract, o))
                             down_put_buy_OCAOrderId = o_id
                             print("placing hedge put buy order for strike:", _strike, "down_put_buy_option_contract:", down_put_buy_option_contract, "limit_price:", str(o.lmtPrice), "state_seq_id:", self.state_seq_id, "current_time:", current_time)
                             self.log_file_handle.write("placing put buy order for strike:" + str(_strike) + "down_put_buy_option_contract:" + str(down_put_buy_option_contract) + "limit_price:" + str(o.lmtPrice) + "state_seq_id:" + str(self.state_seq_id) + "current_time:" + str(current_time) + "\n")
@@ -4326,6 +4394,7 @@ class ESDynamicStraddleStrategy(Object):
                     o_id = self.testapp.nextOrderId()
                     short_put_option_to_open_order_id = o_id
                     testapp.placeOrder(short_put_option_to_open_order_id, short_put_option_contract_to_open, o)
+                    self.order_queue.put(("place_order", short_put_option_to_open_order_id, short_put_option_contract_to_open, o))
                     short_put_option_OCAOrderIds.append(short_put_option_to_open_order_id)
                     if self.attach_bracket_order:
                         short_put_option_to_open_profit_order, short_put_option_to_open_loss_order = short_put_option_bracket_order_tuples.pop()
@@ -4339,8 +4408,10 @@ class ESDynamicStraddleStrategy(Object):
                         short_put_option_to_open_loss_order.triggerMethod = 1
                         o_id = self.testapp.nextOrderId()
                         testapp.placeOrder(o_id, short_put_option_contract_to_open, short_put_option_to_open_profit_order)
+                        self.order_queue.put(("place_order", o_id, short_put_option_contract_to_open, short_put_option_to_open_profit_order))
                         o_id = self.testapp.nextOrderId()
                         testapp.placeOrder(o_id, short_put_option_contract_to_open, short_put_option_to_open_loss_order)
+                        self.order_queue.put(("place_order", o_id, short_put_option_contract_to_open, short_put_option_to_open_loss_order))
                         self.log_file_handle.write("placing put order for strike:" + str(straddle_put_strike_) + "limit_price:" + str(_price) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "profit_order:" + str(short_put_option_to_open_profit_order) + "loss_order:" + str(short_put_option_to_open_loss_order) + "\n")
                     time.sleep(self.intra_order_sleep_time_ms/1000)
             else:
@@ -4413,6 +4484,7 @@ class ESDynamicStraddleStrategy(Object):
                     o_id = self.testapp.nextOrderId()
                     short_call_option_to_open_order_id = o_id
                     testapp.placeOrder(short_call_option_to_open_order_id, short_call_option_contract_to_open, o)
+                    self.order_queue.put(("place_order", short_call_option_to_open_order_id, short_call_option_contract_to_open, o))
                     short_call_option_OCAOrderIds.append(short_call_option_to_open_order_id)
                     if self.attach_bracket_order:
                         short_call_option_to_open_profit_order, short_call_option_to_open_loss_order = short_call_option_bracket_order_tuples.pop()
@@ -4426,8 +4498,10 @@ class ESDynamicStraddleStrategy(Object):
                         short_call_option_to_open_loss_order.triggerMethod = 1
                         o_id = self.testapp.nextOrderId()
                         testapp.placeOrder(o_id, short_call_option_contract_to_open, short_call_option_to_open_profit_order)
+                        self.order_queue.put(("place_order", o_id, short_call_option_contract_to_open, short_call_option_to_open_profit_order))
                         o_id = self.testapp.nextOrderId()
                         testapp.placeOrder(o_id, short_call_option_contract_to_open, short_call_option_to_open_loss_order)
+                        self.order_queue.put(("place_order", o_id, short_call_option_contract_to_open, short_call_option_to_open_loss_order))
                     self.log_file_handle.write("placing call order for strike:" + str(straddle_call_strike_) + "limit_price:" + str(_price) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "profit_order:" + str(short_call_option_to_open_profit_order) + "loss_order:" + str(short_call_option_to_open_loss_order) + "\n")
                     time.sleep(self.intra_order_sleep_time_ms/1000)
             else:
@@ -4589,6 +4663,7 @@ class ESDynamicStraddleStrategy(Object):
                 o_id_short_put = self.testapp.nextOrderId()
                 short_put_option_to_open_order_id = o_id_short_put
                 testapp.placeOrder(short_put_option_to_open_order_id, short_put_option_contract_to_open, o)
+                self.order_queue.put(("place_order", short_put_option_to_open_order_id, short_put_option_contract_to_open, o))
                 short_put_option_OCAOrderIds.append(short_put_option_to_open_order_id)
                 if self.attach_bracket_order:
                     short_put_option_to_open_profit_order, short_put_option_to_open_loss_order = short_put_option_bracket_order_tuples.pop()
@@ -4602,8 +4677,10 @@ class ESDynamicStraddleStrategy(Object):
                     short_put_option_to_open_loss_order.triggerMethod = 1
                     o_id = self.testapp.nextOrderId()
                     testapp.placeOrder(o_id, short_put_option_contract_to_open, short_put_option_to_open_profit_order)
+                    self.order_queue.put(("place_order", o_id, short_put_option_contract_to_open, short_put_option_to_open_profit_order))
                     o_id = self.testapp.nextOrderId()
                     testapp.placeOrder(o_id, short_put_option_contract_to_open, short_put_option_to_open_loss_order)
+                    self.order_queue.put(("place_order", o_id, short_put_option_contract_to_open, short_put_option_to_open_loss_order))
                 self.log_file_handle.write("state_seq_id:" + str(self.state_seq_id) + "placing short straddle put order for strike:" + str(straddle_put_strike_) + "limit_price:" + str(_price) + "short_put_option_contract_to_open:" + str(short_put_option_contract_to_open) + "profit_order:" + str(short_put_option_to_open_profit_order) + "loss_order:" + str(short_put_option_to_open_loss_order) + "order_id:" + str(o_id_short_put) + " time:" + str(current_time) + "\n")
                 #time.sleep(self.intra_order_sleep_time_ms/1000)
             else:
@@ -4612,6 +4689,7 @@ class ESDynamicStraddleStrategy(Object):
                 o_id_short_call = self.testapp.nextOrderId()
                 short_call_option_to_open_order_id = o_id_short_call
                 testapp.placeOrder(short_call_option_to_open_order_id, short_call_option_contract_to_open, o)
+                self.order_queue.put(("place_order", short_call_option_to_open_order_id, short_call_option_contract_to_open, o))
                 short_call_option_OCAOrderIds.append(short_call_option_to_open_order_id)
                 if self.attach_bracket_order:
                     short_call_option_to_open_profit_order, short_call_option_to_open_loss_order = short_call_option_bracket_order_tuples.pop()
@@ -4625,10 +4703,37 @@ class ESDynamicStraddleStrategy(Object):
                     short_call_option_to_open_loss_order.triggerMethod = 1
                     o_id = self.testapp.nextOrderId()
                     testapp.placeOrder(o_id, short_call_option_contract_to_open, short_call_option_to_open_profit_order)
+                    self.order_queue.put(("place_order", o_id, short_call_option_contract_to_open, short_call_option_to_open_profit_order))
                     o_id = self.testapp.nextOrderId()
                     testapp.placeOrder(o_id, short_call_option_contract_to_open, short_call_option_to_open_loss_order)
+                    self.order_queue.put(("place_order", o_id, short_call_option_contract_to_open, short_call_option_to_open_loss_order))
                 self.log_file_handle.write("state_seq_id:" + str(self.state_seq_id) + "placing short straddle call order for strike:" + str(straddle_call_strike_) + "limit_price:" + str(_price) + "short_call_option_contract_to_open:" + str(short_call_option_contract_to_open) + "profit_order:" + str(short_call_option_to_open_profit_order) + "loss_order:" + str(short_call_option_to_open_loss_order) + "order_id:" + str(o_id_short_call) + " time:" + str(current_time) + "\n")
             time.sleep(self.intra_order_sleep_time_ms/1000)
+
+class OrderHandler(threading.Thread):
+    def __init__(self, order_queue_, log_file_handle_):
+        threading.Thread.__init__(self)
+        self.order_queue = order_queue_
+        self.log_file_handle = log_file_handle_
+        self.stop_thread = False
+
+    def run(self):
+        print("OrderHandler thread started")
+        while not self.stop_thread:
+            while not self.order_queue.empty():
+                order, delay = self.order_queue.get()
+                if order is not None:
+                    current_time = datetime.datetime.now()
+                    
+                    print("OrderHandler received order:", order)
+                    if self.log_file_handle is not None:
+                        self.log_file_handle.write("OrderHandler received order:" + str(order) + "\n")
+                    time.sleep(1)
+        print("OrderHandler thread exiting")
+
+    def stop(self):
+        self.stop_thread = True
+
 
 def status_monitor(status_queue_, log_file_handle_):
         import winsound
@@ -4678,7 +4783,7 @@ def main():
                                dest="global_cancel", default=False,
                                help="whether to trigger a globalCancel req")
     cmdLineParser.add_argument("-d", "--trade-date", action="store", type=str,
-                               dest="trade_date", default="20240510", help="trade exp date in yyyymmdd str format")
+                               dest="trade_date", default="20240514", help="trade exp date in yyyymmdd str format")
     cmdLineParser.add_argument("-id", "--client-id", action="store", type=int,
                                dest="client_id", default=0, help="client id to use")
     args = cmdLineParser.parse_args()
@@ -4729,9 +4834,9 @@ def main():
                 app.globalCancelOnly = True
             # ! [connect]
             app.connect("127.0.0.1", args.port, clientId=client_id)
-            # ! [connect]
-            print("serverVersion:%s connectionTime:%s" % (app.serverVersion(),
-                                                        app.twsConnectionTime()))
+            print("serverVersion:%s connectionTime:%s" % (app.serverVersion(),app.twsConnectionTime()))
+            print("isConnected:", app.isConnected())
+            
             app.ESDynamicStraddleStrategy.status_queue_ = status_queue
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                 log_file_handle = app.ESDynamicStraddleStrategy.log_file_handle
@@ -4745,6 +4850,14 @@ def main():
             #wait until connection is established
             waited_seconds = 0
             while not app.isConnected():
+                # ! [connect]
+                app.connect("127.0.0.1", args.port, clientId=client_id)
+                print("serverVersion:%s connectionTime:%s" % (app.serverVersion(),app.twsConnectionTime()))
+                print("isConnected:", app.isConnected())
+            
+                if app.ESDynamicStraddleStrategy.log_file_handle is not None:
+                    app.ESDynamicStraddleStrategy.log_file_handle.write("serverVersion:" + str(app.serverVersion()) + " connectionTime:" + str(app.twsConnectionTime()) + " client_id:" + str(client_id) + "\n")
+            
                 waited_seconds += 1
                 print("waiting for connection to be established, waited_seconds:", waited_seconds)
                 app.ESDynamicStraddleStrategy.log_file_handle.write("waiting for connection to be established, waited_seconds:" + str(waited_seconds) + "\n")
