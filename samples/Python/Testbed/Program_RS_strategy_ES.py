@@ -2716,7 +2716,18 @@ class ESDynamicStraddleStrategy(Object):
                             current_time = datetime.datetime.now()
                             print("order_id found in order_queue matched in openOrder message from IB server, and the order was placed without error. Removing from queue. order_id:", order_id, " at time:", current_time)
                             self.log_file_handle.write("order_id found in order_queue. Removing from queue. order_id:" + str(order_id) + " at time:" + str(current_time) + "\n")
-                            break #matched order is implicitly removed from the queue by not putting it back
+                            if _contract.symbol == "ES" and _contract.secType == "FOP" and _contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
+                                if _order.action == "BUY" and _order.orderType == "STP LMT" and _order.lmtPrice is not None and _order.lmtPrice > 0 and _order.auxPrice is not None and _order.auxPrice > 0:
+                                    if _contract.right == "C":
+                                        self.call_bracket_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                    elif _contract.right == "P":
+                                        self.put_bracket_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                if _order.action == "BUY" and _order.orderType == "LMT" and _order.lmtPrice is not None and _order.lmtPrice > 0:
+                                    if _contract.right == "C":
+                                        self.call_bracket_profit_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                    elif _contract.right == "P":
+                                        self.put_bracket_profit_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                break #matched order is implicitly removed from the queue by not putting it back
                     self.order_queue.put(order_queue_msg)
 
             elif msg_type == "position_end":
@@ -2732,7 +2743,8 @@ class ESDynamicStraddleStrategy(Object):
                 tickType = msg[2]
                 price = msg[3]
                 attrib = msg[4]
-                self.updateESFOPPrice(reqContract, tickType, price, attrib)
+                if reqContract.symbol == "ES" and reqContract.secType == "FOP" and reqContract.lastTradeDateOrContractMonth == self.OptionTradeDate:
+                    self.updateESFOPPrice(reqContract, tickType, price, attrib)
             elif msg_type == "es_quote":
                 tickType = msg[1]
                 price = msg[2]
@@ -2761,15 +2773,16 @@ class ESDynamicStraddleStrategy(Object):
                             _order_id = order_queue_msg[1]
                             _contract = order_queue_msg[2]
                             _order = order_queue_msg[3]
-                            if _reqId == _order_id:
-                                __order_id = self.testapp.nextOrderId()
-                                self.testapp.placeOrder(__order_id, _contract, _order)
-                                self.order_queue.put(("place_order", __order_id, _contract, _order))
-                                current_time = datetime.datetime.now()
-                                print("order_id: ", _order_id,  " found in order_queue had duplicate order id error. Retrying with new order_id:", __order_id, " at time:", current_time)
-                                self.log_file_handle.write("order_id: " + str(_order_id) + " found in order_queue had duplicate order id error. Retrying with new order_id:" + str(__order_id) + " at time:" + str(current_time) + "\n")
-                                order_found = True
-                                break #matched order is implicitly removed from the queue by not putting it back
+                            if _contract.symbol == "ES" and _contract.secType == "FOP" and _contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
+                                if _reqId == _order_id:
+                                    __order_id = self.testapp.nextOrderId()
+                                    self.testapp.placeOrder(__order_id, _contract, _order)
+                                    self.order_queue.put(("place_order", __order_id, _contract, _order))
+                                    current_time = datetime.datetime.now()
+                                    print("order_id: ", _order_id,  " found in order_queue had duplicate order id error. Retrying with new order_id:", __order_id, " at time:", current_time)
+                                    self.log_file_handle.write("order_id: " + str(_order_id) + " found in order_queue had duplicate order id error. Retrying with new order_id:" + str(__order_id) + " at time:" + str(current_time) + "\n")
+                                    order_found = True
+                                    break #matched order is implicitly removed from the queue by not putting it back
                         self.order_queue.put(order_queue_msg)
 
             self.call_stplmt_open_orders_tuples_active = False
@@ -2886,8 +2899,21 @@ class ESDynamicStraddleStrategy(Object):
                 continue
 
             if stplmt_active:
-                order_id, contract, order, order_state = self.call_stplmt_open_orders_tuples[strike]
-                strike_call_bracket_order_stplmt_quantity = strike_call_bracket_order_stplmt_quantity  + order.totalQuantity
+                _order_id, _contract, _order, _order_state = self.call_stplmt_open_orders_tuples[strike]
+                strike_call_bracket_order_stplmt_quantity = strike_call_bracket_order_stplmt_quantity  + _order.totalQuantity
+                if _contract.symbol == "ES" and _contract.secType == "FOP" and _contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
+                    if _order.action == "BUY" and _order.orderType == "STP LMT" and _order.lmtPrice is not None and _order.lmtPrice > 0 and _order.auxPrice is not None and _order.auxPrice > 0:
+                        #check if stop price has been dynamically adjusted
+                        if _order.auxPrice != self.stop_loss_increment:
+                            self.cancelpendingstplmtorder(strike, "C")
+                            print("Stop price adjust position:", position, "strike_call_bracket_order_stplmt_quantity:", strike_call_bracket_order_stplmt_quantity)
+                            self.log_file_handle.write("Stop price adjust position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "\n")
+                            print("Stale stop price for bracket orders: cancelling call order for strike:", strike, "order stop price:", _order.auxPrice, "expected stop price:", self.stop_loss_increment)
+                            self.log_file_handle.write("Stale stop price for bracket orders: cancelling call order for strike:" + str(strike) + "order stop price:" + str(_order.auxPrice) + "expected stop price:" + str(self.stop_loss_increment) + "\n")
+                            time.sleep(self.intra_order_sleep_time_ms/1000)
+                            self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                            self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                            self.call_bracket_order_maintenance_on_hold = True
             if stplmt_profit_active:
                 order_id, contract, order, order_state = self.call_stplmt_profit_open_orders_tuples[strike]
                 strike_call_bracket_order_profit_quantity = strike_call_bracket_order_profit_quantity + order.totalQuantity
@@ -3045,6 +3071,19 @@ class ESDynamicStraddleStrategy(Object):
             if stplmt_active:
                 order_id, contract, order, order_state = self.put_stplmt_open_orders_tuples[strike]
                 strike_put_bracket_order_stplmt_quantity = strike_put_bracket_order_stplmt_quantity  + order.totalQuantity
+                if contract.symbol == "ES" and contract.secType == "FOP" and contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
+                    if order.action == "BUY" and order.orderType == "STP LMT" and order.lmtPrice is not None and order.lmtPrice > 0 and order.auxPrice is not None and order.auxPrice > 0:
+                        #check if stop price has been dynamically adjusted
+                        if order.auxPrice != self.stop_loss_increment:
+                            self.cancelpendingstplmtorder(strike, "P")
+                            print("Stop price adjust: position:", position, "strike_put_bracket_order_stplmt_quantity:", strike_put_bracket_order_stplmt_quantity)
+                            self.log_file_handle.write("Stop price adjust: position:" + str(position) + "strike_put_bracket_order_stplmt_quantity:" + str(strike_put_bracket_order_stplmt_quantity) + "\n")
+                            print("Stale stop price for bracket orders: cancelling put order for strike:", strike, "order stop price:", order.auxPrice, "expected stop price:", self.stop_loss_increment)
+                            self.log_file_handle.write("Stale stop price for bracket orders: cancelling put order for strike:" + str(strike) + "order stop price:" + str(order.auxPrice) + "expected stop price:" + str(self.stop_loss_increment) + "\n")
+                            time.sleep(self.intra_order_sleep_time_ms/1000)
+                            self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                            self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                            self.put_bracket_order_maintenance_on_hold = True
             if stplmt_profit_active:
                 order_id, contract, order, order_state = self.put_stplmt_profit_open_orders_tuples[strike]
                 strike_put_bracket_order_profit_quantity = strike_put_bracket_order_profit_quantity + order.totalQuantity
