@@ -653,7 +653,7 @@ class TestApp(TestWrapper, TestClient):
         #print("UpdateAccountValue. Key:", key, "Value:", val,
         #      "Currency:", currency, "AccountName:", accountName)
         #write ESDynamicStraddleStrategy log file
-        self.ESDynamicStraddleStrategy.log_file_handle.write("UpdateAccountValue. Key: %s Value: %s Currency: %s AccountName: %s\n" % (key, val, currency, accountName))
+        #self.ESDynamicStraddleStrategy.log_file_handle.write("UpdateAccountValue. Key: %s Value: %s Currency: %s AccountName: %s\n" % (key, val, currency, accountName))
     # ! [updateaccountvalue]
 
     @iswrapper
@@ -670,7 +670,7 @@ class TestApp(TestWrapper, TestClient):
         #      "UnrealizedPNL:", floatMaxString(unrealizedPNL), "RealizedPNL:", floatMaxString(realizedPNL),
         #      "AccountName:", accountName)
         #write ESDynamicStraddleStrategy log file
-        self.ESDynamicStraddleStrategy.log_file_handle.write("UpdatePortfolio. Symbol: %s SecType: %s Exchange: %s Position: %s MarketPrice: %s MarketValue: %s AverageCost: %s UnrealizedPNL: %s RealizedPNL: %s AccountName: %s\n" % (contract.symbol, contract.secType, contract.exchange, decimalMaxString(position), floatMaxString(marketPrice), floatMaxString(marketValue), floatMaxString(averageCost), floatMaxString(unrealizedPNL), floatMaxString(realizedPNL), accountName))
+        #self.ESDynamicStraddleStrategy.log_file_handle.write("UpdatePortfolio. Symbol: %s SecType: %s Exchange: %s Position: %s MarketPrice: %s MarketValue: %s AverageCost: %s UnrealizedPNL: %s RealizedPNL: %s AccountName: %s\n" % (contract.symbol, contract.secType, contract.exchange, decimalMaxString(position), floatMaxString(marketPrice), floatMaxString(marketValue), floatMaxString(averageCost), floatMaxString(unrealizedPNL), floatMaxString(realizedPNL), accountName))
     # ! [updateportfolio]
 
     @iswrapper
@@ -2668,7 +2668,7 @@ class ESDynamicStraddleStrategy(Object):
                 order = msg[3]
                 order_state = msg[4]
                 #print("open_order message received. order_id:", order_id, "contract:", contract, "order:", order, "order_state:", order_state)
-                self.log_file_handle.write("open_order message received. order_id:" + str(order_id) + " contract:" + str(contract) + " order:" + str(order) + " order_state:" + str(order_state) + "\n")
+                #self.log_file_handle.write("open_order message received. order_id:" + str(order_id) + " contract:" + str(contract) + " order:" + str(order) + " order_state:" + str(order_state) + "\n")
                 if contract.symbol == "ES" and contract.secType == "FOP" and contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
                     if order.action == "BUY" and order.orderType == "STP LMT" and order.lmtPrice is not None and order.lmtPrice > 0 and order.auxPrice is not None and order.auxPrice > 0 and order_state.status == "PreSubmitted":
                         if contract.right == "C":
@@ -5017,7 +5017,7 @@ def main():
             #app.reqIds(-1)
             #o_id = app.nextOrderId() 
         finally:
-            stop_thread = True
+            #stop_thread = True
             current_time = datetime.datetime.now()
             print("disconnecting at time:", current_time)
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
@@ -5040,6 +5040,10 @@ def main():
             #apprently when socket is closed in lower layer, app.connected() can still return True, so don't check it
             app.disconnect()
             app.ESDynamicStraddleStrategy.connect_ack_recvd = False
+            app.started = False
+            app.ESDynamicStraddleStrategy.lastESPrice = None
+            app.ESDynamicStraddleStrategy.currentESPrice = None
+            app.nextValidOrderId = None
     
     print("stop_thread:", stop_thread)
     #stop the monitor thread
