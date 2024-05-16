@@ -276,6 +276,7 @@ class TestApp(TestWrapper, TestClient):
     def connectAck(self):
         if self.asynchronous:
             self.startApi()
+        self.ESDynamicStraddleStrategy.connect_ack_recvd = True
 
     # ! [connectack]
 
@@ -356,7 +357,7 @@ class TestApp(TestWrapper, TestClient):
             print("Executing requests ... finished")
 
     def keyboardInterrupt(self):
-        current_time = datetime.datetime.now(datetime.timezone.utc)
+        current_time = datetime.datetime.now()
         #raise KeyboardInterrupt
         print("Keyboard interrupt at", current_time)
         #write ESDynamicStraddleStrategy log file
@@ -444,7 +445,7 @@ class TestApp(TestWrapper, TestClient):
         #    "competeAgainstBestOffset:", "UpToMid" if order.competeAgainstBestOffset == COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID else floatMaxString(order.competeAgainstBestOffset),
         #    "MidOffsetAtWhole:", floatMaxString(order.midOffsetAtWhole),"MidOffsetAtHalf:" ,floatMaxString(order.midOffsetAtHalf))
         #write ESDynamicStraddleStrategy log file
-        self.ESDynamicStraddleStrategy.log_file_handle.write("OpenOrder. PermId: %s ClientId: %s OrderId: %s Account: %s Symbol: %s SecType: %s Exchange: %s Action: %s OrderType: %s TotalQty: %s CashQty: %s LmtPrice: %s AuxPrice: %s Status: %s MinTradeQty: %s MinCompeteSize: %s competeAgainstBestOffset: %s MidOffsetAtWhole: %s MidOffsetAtHalf: %s\n" % (intMaxString(order.permId), intMaxString(order.clientId), intMaxString(orderId), order.account, contract.symbol, contract.secType, contract.exchange, order.action, order.orderType, decimalMaxString(order.totalQuantity), floatMaxString(order.cashQty), floatMaxString(order.lmtPrice), floatMaxString(order.auxPrice), orderState.status, intMaxString(order.minTradeQty), intMaxString(order.minCompeteSize), "UpToMid" if order.competeAgainstBestOffset == COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID else floatMaxString(order.competeAgainstBestOffset), floatMaxString(order.midOffsetAtWhole), floatMaxString(order.midOffsetAtHalf)))
+        #self.ESDynamicStraddleStrategy.log_file_handle.write("OpenOrder. PermId: %s ClientId: %s OrderId: %s Account: %s Symbol: %s SecType: %s Exchange: %s Action: %s OrderType: %s TotalQty: %s CashQty: %s LmtPrice: %s AuxPrice: %s Status: %s MinTradeQty: %s MinCompeteSize: %s competeAgainstBestOffset: %s MidOffsetAtWhole: %s MidOffsetAtHalf: %s\n" % (intMaxString(order.permId), intMaxString(order.clientId), intMaxString(orderId), order.account, contract.symbol, contract.secType, contract.exchange, order.action, order.orderType, decimalMaxString(order.totalQuantity), floatMaxString(order.cashQty), floatMaxString(order.lmtPrice), floatMaxString(order.auxPrice), orderState.status, intMaxString(order.minTradeQty), intMaxString(order.minCompeteSize), "UpToMid" if order.competeAgainstBestOffset == COMPETE_AGAINST_BEST_OFFSET_UP_TO_MID else floatMaxString(order.competeAgainstBestOffset), floatMaxString(order.midOffsetAtWhole), floatMaxString(order.midOffsetAtHalf)))
         self.message_from_ib_queue.put(("open_order", orderId, contract, order, orderState))
         
         #order.contract = contract
@@ -485,7 +486,7 @@ class TestApp(TestWrapper, TestClient):
         #      floatMaxString(lastFillPrice), "ClientId:", intMaxString(clientId), "WhyHeld:",
         #      whyHeld, "MktCapPrice:", floatMaxString(mktCapPrice))
         #write ESDynamicStraddleStrategy log file
-        self.ESDynamicStraddleStrategy.log_file_handle.write("OrderStatus. Id: %s Status: %s Filled: %s Remaining: %s AvgFillPrice: %s PermId: %s ParentId: %s LastFillPrice: %s ClientId: %s WhyHeld: %s MktCapPrice: %s\n" % (orderId, status, decimalMaxString(filled), decimalMaxString(remaining), floatMaxString(avgFillPrice), intMaxString(permId), intMaxString(parentId), floatMaxString(lastFillPrice), intMaxString(clientId), whyHeld, floatMaxString(mktCapPrice)))
+        #self.ESDynamicStraddleStrategy.log_file_handle.write("OrderStatus. Id: %s Status: %s Filled: %s Remaining: %s AvgFillPrice: %s PermId: %s ParentId: %s LastFillPrice: %s ClientId: %s WhyHeld: %s MktCapPrice: %s\n" % (orderId, status, decimalMaxString(filled), decimalMaxString(remaining), floatMaxString(avgFillPrice), intMaxString(permId), intMaxString(parentId), floatMaxString(lastFillPrice), intMaxString(clientId), whyHeld, floatMaxString(mktCapPrice)))
     # ! [orderstatus]
 
 
@@ -2538,8 +2539,8 @@ class ESDynamicStraddleStrategy(Object):
         #    self.log_file_handle.write("state_seq_id file not found. Using default value of 0\n")
         self.quote_time_lag_limit = 60 #in seconds
         self.hedge_position_allowance = 4 #number of extra allowed hedge buys
-        self.straddle_call_itm_offset = 5
-        self.straddle_put_itm_offset = 5
+        self.straddle_call_itm_offset = 0
+        self.straddle_put_itm_offset = 0
         self.outer_hedge_start_sr_multiplier = 1.4
         self.short_option_min_price_threshold = 8 #do not sell short options below this price, not worth the high gamma risk
         
@@ -2559,7 +2560,8 @@ class ESDynamicStraddleStrategy(Object):
         self.hedge_position_count = 0
         self.hedge_range_lower_strike = 0
         self.hedge_range_upper_strike = 0
-        self.hedge_start_sperpos_multiplier = 2.8    
+        self.hedge_start_sperpos_multiplier = 2.8
+        self.each_hedge_buy_size = 2
         
         #Dynamic delta1 hedging
         self.enable_dynamic_delta1_hedging_policy1 = True #hedge each position at sr1, take profit at 2*sr1, hedge removal handled naturally by policy kicking in for opposite right option
@@ -2573,7 +2575,7 @@ class ESDynamicStraddleStrategy(Object):
 
         self.order_id_is_stale = True
         self.order_queue = queue.Queue() #This queue will save each order as it is placed. Remove an order from the queue when the order id shows up in the openorders or orderstatus messages. Retry an order if the order id shows up in error message
-        
+        self.connect_ack_recvd = False
 
     def updateESFOPPrice(self, reqContract, tickType, price, attrib):
         assert reqContract.symbol == "ES" and reqContract.secType == "FOP" and reqContract.lastTradeDateOrContractMonth == self.OptionTradeDate
@@ -2609,6 +2611,7 @@ class ESDynamicStraddleStrategy(Object):
         self.testapp.reqMktData(reqId, self.EScontract, "", False, False, [])
 
     def process_messages_from_ib_queue(self):
+        current_time = datetime.datetime.now()
         while not self.testapp.message_from_ib_queue.empty():
             msg = self.testapp.message_from_ib_queue.get()
             #msg is a tuple with the first e`lement being the message type and the remaining elements being the message
@@ -2676,6 +2679,8 @@ class ESDynamicStraddleStrategy(Object):
                                 self.call_stplmt_open_orders_tuples[contract.strike] = []
                             self.call_stplmt_open_orders_tuples[contract.strike] = (order_id, contract, order, order_state)
                             self.call_bracket_order_maintenance_on_hold_for_strike[contract.strike] = False
+                            #print("setting call_bracket_order_maintenance_on_hold_for_strike for strike:", contract.strike, " to False at time ", current_time)
+                            #self.log_file_handle.write("setting call_bracket_order_maintenance_on_hold_for_strike for strike:" + str(contract.strike) + " to False at time " + str(current_time) + "\n")
                         elif contract.right == "P":
                             if not self.put_stplmt_open_orders_tuples_active:
                                 self.put_stplmt_open_orders_tuples_active = True
@@ -2684,8 +2689,10 @@ class ESDynamicStraddleStrategy(Object):
                                 self.put_stplmt_open_orders_tuples[contract.strike] = []
                             self.put_stplmt_open_orders_tuples[contract.strike] = (order_id, contract, order, order_state)
                             self.put_bracket_order_maintenance_on_hold_for_strike[contract.strike] = False
+                            #print("setting put_bracket_order_maintenance_on_hold_for_strike for strike:", contract.strike, " to False at time ", current_time)
+                            #self.log_file_handle.write("setting put_bracket_order_maintenance_on_hold_for_strike for strike:" + str(contract.strike) + " to False at time " + str(current_time) + "\n")
 
-                    if order.action == "BUY" and order.orderType == "LMT" and order_state.status == "Submitted" and order.lmtPrice is not None and order.lmtPrice > 0:
+                    if order.action == "BUY" and order.orderType == "LMT" and (order_state.status == "Submitted" or order_state.status == "PreSubmitted") and order.lmtPrice is not None and order.lmtPrice > 0:
                         if contract.right == "C":
                             if not self.call_stplmt_profit_open_orders_tuples_active:
                                 self.call_stplmt_profit_open_orders_tuples_active = True
@@ -2694,6 +2701,8 @@ class ESDynamicStraddleStrategy(Object):
                                 self.call_stplmt_profit_open_orders_tuples[contract.strike] = []
                             self.call_stplmt_profit_open_orders_tuples[contract.strike] = (order_id, contract, order, order_state)
                             self.call_bracket_profit_order_maintenance_on_hold_for_strike[contract.strike] = False
+                            #print("setting call_bracket_profit_order_maintenance_on_hold_for_strike for strike:", contract.strike, " to False at time ", current_time)
+                            #self.log_file_handle.write("setting call_bracket_profit_order_maintenance_on_hold_for_strike for strike:" + str(contract.strike) + " to False at time " + str(current_time) + "\n")
                         elif contract.right == "P":
                             if not self.put_stplmt_profit_open_orders_tuples_active:
                                 self.put_stplmt_profit_open_orders_tuples_active = True
@@ -2702,6 +2711,8 @@ class ESDynamicStraddleStrategy(Object):
                                 self.put_stplmt_profit_open_orders_tuples[contract.strike] = []
                             self.put_stplmt_profit_open_orders_tuples[contract.strike] = (order_id, contract, order, order_state)
                             self.put_bracket_profit_order_maintenance_on_hold_for_strike[contract.strike] = False
+                            #print("setting put_bracket_profit_order_maintenance_on_hold_for_strike for strike:", contract.strike, " to False at time ", current_time)
+                            #self.log_file_handle.write("setting put_bracket_profit_order_maintenance_on_hold_for_strike for strike:" + str(contract.strike) + " to False at time " + str(current_time) + "\n")
                 #check order_id against order_queue and remove the order from the queue if matches
                 #peek through the queue and remove the order if found
                 order_found = False
@@ -2784,6 +2795,60 @@ class ESDynamicStraddleStrategy(Object):
                                     order_found = True
                                     break #matched order is implicitly removed from the queue by not putting it back
                         self.order_queue.put(order_queue_msg)
+                elif int(_errorCode) == 202 or int(_errorCode) == 201: #Order cancelled
+                    #get the order from the order_queue and retry
+                    order_found = False
+                    for i in range(self.order_queue.qsize()):
+                        order_queue_msg = self.order_queue.get()
+                        if order_queue_msg[0] == "cancel_order":
+                            _order_id = order_queue_msg[1]
+                            _contract = order_queue_msg[2]
+                            _order = order_queue_msg[3]
+                            if _reqId == _order_id:
+                                order_found = True
+                                current_time = datetime.datetime.now()
+                                print("order_id found in order_queue matched in ", _errorCode, " code error message from IB server, and the order was cancelled. Removing from queue. order_id:", _order_id, " at time:", current_time)
+                                self.log_file_handle.write("order_id found in order_queue matched in " + str(_errorCode) + " code error message from IB server, and the order was cancelled. Removing from queue. order_id:" + str(_order_id) + " at time:" + str(current_time) + "\n")
+                                if _contract.symbol == "ES" and _contract.secType == "FOP" and _contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
+                                    if _order.action == "BUY" and _order.orderType == "STP LMT" and _order.lmtPrice is not None and _order.lmtPrice > 0 and _order.auxPrice is not None and _order.auxPrice > 0:
+                                        if _contract.right == "C":
+                                            self.call_bracket_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                        elif _contract.right == "P":
+                                            self.put_bracket_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                    if _order.action == "BUY" and _order.orderType == "LMT" and _order.lmtPrice is not None and _order.lmtPrice > 0:
+                                        if _contract.right == "C":
+                                            self.call_bracket_profit_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                        elif _contract.right == "P":
+                                            self.put_bracket_profit_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                    break #matched order is implicitly removed from the queue by not putting it back
+                        self.order_queue.put(order_queue_msg)
+                elif int(_errorCode) == 10148 or int(_errorCode) == 10147: #Order to be cancelled is already cancelled
+                    #get the order from the order_queue and retry
+                    order_found = False
+                    for i in range(self.order_queue.qsize()):
+                        order_queue_msg = self.order_queue.get()
+                        if order_queue_msg[0] == "cancel_order":
+                            _order_id = order_queue_msg[1]
+                            _contract = order_queue_msg[2]
+                            _order = order_queue_msg[3]
+                            if _reqId == _order_id:
+                                order_found = True
+                                current_time = datetime.datetime.now()
+                                print("order_id found in order_queue matched ", _errorCode, " code error message from IB server, and the order was cancelled. Removing from queue. order_id:", _order_id, " at time:", current_time)
+                                self.log_file_handle.write("order_id found in order_queue matched " + str(_errorCode) + " code error message from IB server, and the order was cancelled. Removing from queue. order_id:" + str(_order_id) + " at time:" + str(current_time) + "\n")
+                                if _contract.symbol == "ES" and _contract.secType == "FOP" and _contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
+                                    if _order.action == "BUY" and _order.orderType == "STP LMT" and _order.lmtPrice is not None and _order.lmtPrice > 0 and _order.auxPrice is not None and _order.auxPrice > 0:
+                                        if _contract.right == "C":
+                                            self.call_bracket_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                        elif _contract.right == "P":
+                                            self.put_bracket_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                    if _order.action == "BUY" and _order.orderType == "LMT" and _order.lmtPrice is not None and _order.lmtPrice > 0:
+                                        if _contract.right == "C":
+                                            self.call_bracket_profit_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                        elif _contract.right == "P":
+                                            self.put_bracket_profit_order_maintenance_on_hold_for_strike[_contract.strike] = False
+                                    break #matched order is implicitly removed from the queue by not putting it back
+                        self.order_queue.put(order_queue_msg)
 
             self.call_stplmt_open_orders_tuples_active = False
             self.put_stplmt_open_orders_tuples_active = False
@@ -2813,6 +2878,7 @@ class ESDynamicStraddleStrategy(Object):
                 stplmt_open_orders_tuples = self.call_stplmt_open_orders_tuples[strike]
                 order_id, contract, order, order_state = stplmt_open_orders_tuples
                 self.testapp.cancelOrder(order_id,current_time)
+                self.order_queue.put(("cancel_order", order_id, contract, order))
                     #remove the order from the list
                     #self.call_stplmt_open_orders_tuples[strike].remove(order_id, contract, order, order_state)
         else:
@@ -2820,6 +2886,7 @@ class ESDynamicStraddleStrategy(Object):
                 stplmt_open_orders_tuples = self.put_stplmt_open_orders_tuples[strike]
                 order_id, contract, order, order_state = stplmt_open_orders_tuples
                 self.testapp.cancelOrder(order_id, current_time)
+                self.order_queue.put(("cancel_order", order_id, contract, order))
                     #remove the order from the list
                     #self.put_stplmt_open_orders_tuples[strike].remove(order_id, contract, order, order_state)
     def cancelpendingstplmtprofitorder(self, strike, right):
@@ -2830,6 +2897,7 @@ class ESDynamicStraddleStrategy(Object):
                 stplmt_profit_open_orders_tuples = self.call_stplmt_profit_open_orders_tuples[strike]
                 order_id, contract, order, order_state = stplmt_profit_open_orders_tuples
                 self.testapp.cancelOrder(order_id,current_time)
+                self.order_queue.put(("cancel_order", order_id, contract, order))
                     #remove the order from the list
                     #self.call_stplmt_profit_open_orders_tuples[strike].remove(order_id, contract, order, order_state)
         else:
@@ -2837,6 +2905,7 @@ class ESDynamicStraddleStrategy(Object):
                 stplmt_profit_open_orders_tuples = self.put_stplmt_profit_open_orders_tuples[strike]
                 order_id, contract, order, order_state = stplmt_profit_open_orders_tuples
                 self.testapp.cancelOrder(order_id, current_time)
+                self.order_queue.put(("cancel_order", order_id, contract, order))
                     #remove the order from the list
                     #self.put_stplmt_profit_open_orders_tuples[strike].remove(order_id, contract, order, order_state)
 
@@ -2904,16 +2973,14 @@ class ESDynamicStraddleStrategy(Object):
                 if _contract.symbol == "ES" and _contract.secType == "FOP" and _contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
                     if _order.action == "BUY" and _order.orderType == "STP LMT" and _order.lmtPrice is not None and _order.lmtPrice > 0 and _order.auxPrice is not None and _order.auxPrice > 0:
                         #check if stop price has been dynamically adjusted
-                        if _order.auxPrice != self.stop_loss_increment:
+                        if _order.auxPrice != self.stop_loss_increment and self.stop_loss_increment != 100:
                             self.cancelpendingstplmtorder(strike, "C")
                             print("Stop price adjust position:", position, "strike_call_bracket_order_stplmt_quantity:", strike_call_bracket_order_stplmt_quantity)
                             self.log_file_handle.write("Stop price adjust position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "\n")
                             print("Stale stop price for bracket orders: cancelling call order for strike:", strike, "order stop price:", _order.auxPrice, "expected stop price:", self.stop_loss_increment)
                             self.log_file_handle.write("Stale stop price for bracket orders: cancelling call order for strike:" + str(strike) + "order stop price:" + str(_order.auxPrice) + "expected stop price:" + str(self.stop_loss_increment) + "\n")
                             time.sleep(self.intra_order_sleep_time_ms/1000)
-                            self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                            self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                            self.call_bracket_order_maintenance_on_hold = True
+                            continue
             if stplmt_profit_active:
                 order_id, contract, order, order_state = self.call_stplmt_profit_open_orders_tuples[strike]
                 strike_call_bracket_order_profit_quantity = strike_call_bracket_order_profit_quantity + order.totalQuantity
@@ -2968,7 +3035,7 @@ class ESDynamicStraddleStrategy(Object):
                 call_stop_order.triggerMethod = 1
                 call_bracket_OCA_orders = [call_profit_order, call_stop_order]
                 oco_tag_ = "AttachBracketCallOCO_" + str(self.OptionTradeDate) + "_" + str(strike)
-                OrderSamples.OneCancelsAll(str(strike), call_bracket_OCA_orders, 2)
+                OrderSamples.OneCancelsAll(str(oco_tag_), call_bracket_OCA_orders, 2)
                 for o in call_bracket_OCA_orders:
                     self.testapp.reqIds(-1)
                     o.account = self.place_orders_to_account
@@ -2980,9 +3047,6 @@ class ESDynamicStraddleStrategy(Object):
                 self.log_file_handle.write("position:" + str(position) + "strike_call_bracket_order_stplmt_quantity:" + str(strike_call_bracket_order_stplmt_quantity) + "needed_quantity:" + str(needed_quantity) + "\n")
                 self.log_file_handle.write("Not enough bracket orders: attaching call order for strike:" + str(strike) + "limit_price:" + str(call_profit_order_target_price) + "call_contract:" + str(call_contract) + "profit_order:" + str(call_profit_order) + "loss_order:" + str(call_stop_order) + "\n")
                 time.sleep(self.intra_order_sleep_time_ms/1000)
-                self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                self.call_bracket_order_maintenance_on_hold = True
             elif position < 0 and strike_call_bracket_order_stplmt_quantity is not None and -position < strike_call_bracket_order_stplmt_quantity:
                 needed_quantity = strike_call_bracket_order_stplmt_quantity + position
                 #cancel the extra bracket order
@@ -2992,9 +3056,6 @@ class ESDynamicStraddleStrategy(Object):
                 print("Too many bracket orders: cancelling call order for strike:", strike)
                 self.log_file_handle.write("Too many bracket orders: cancelling call order for strike:" + str(strike) + "\n")
                 time.sleep(self.intra_order_sleep_time_ms/1000)
-                self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                self.call_bracket_order_maintenance_on_hold = True
             elif position < 0 and strike_call_bracket_order_stplmt_quantity is not None and strike_call_bracket_order_profit_quantity is not None and -position == strike_call_bracket_order_stplmt_quantity:
                 #check that bracket order limit order and stop limit orders have same quantity
                 if strike_call_bracket_order_stplmt_quantity != strike_call_bracket_order_profit_quantity:
@@ -3006,8 +3067,8 @@ class ESDynamicStraddleStrategy(Object):
                     print("Unequal bracket profit and stplmt legs: cancelling call profit and loss orders for strike:", strike)
                     self.log_file_handle.write("Unequal bracket profit and stplmt legs: cancelling call profit and loss orders for strike:" + str(strike) + "\n")
                     time.sleep(self.intra_order_sleep_time_ms/1000)
-                    self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                    self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                    #self.call_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                    #self.call_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
                     self.call_bracket_order_maintenance_on_hold = True
             
         #clear the stplmt and stplmt_profit open orders
@@ -3074,16 +3135,14 @@ class ESDynamicStraddleStrategy(Object):
                 if contract.symbol == "ES" and contract.secType == "FOP" and contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
                     if order.action == "BUY" and order.orderType == "STP LMT" and order.lmtPrice is not None and order.lmtPrice > 0 and order.auxPrice is not None and order.auxPrice > 0:
                         #check if stop price has been dynamically adjusted
-                        if order.auxPrice != self.stop_loss_increment:
+                        if order.auxPrice != self.stop_loss_increment and self.stop_loss_increment != 100:
                             self.cancelpendingstplmtorder(strike, "P")
                             print("Stop price adjust: position:", position, "strike_put_bracket_order_stplmt_quantity:", strike_put_bracket_order_stplmt_quantity)
                             self.log_file_handle.write("Stop price adjust: position:" + str(position) + "strike_put_bracket_order_stplmt_quantity:" + str(strike_put_bracket_order_stplmt_quantity) + "\n")
                             print("Stale stop price for bracket orders: cancelling put order for strike:", strike, "order stop price:", order.auxPrice, "expected stop price:", self.stop_loss_increment)
                             self.log_file_handle.write("Stale stop price for bracket orders: cancelling put order for strike:" + str(strike) + "order stop price:" + str(order.auxPrice) + "expected stop price:" + str(self.stop_loss_increment) + "\n")
                             time.sleep(self.intra_order_sleep_time_ms/1000)
-                            self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                            self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                            self.put_bracket_order_maintenance_on_hold = True
+                            continue
             if stplmt_profit_active:
                 order_id, contract, order, order_state = self.put_stplmt_profit_open_orders_tuples[strike]
                 strike_put_bracket_order_profit_quantity = strike_put_bracket_order_profit_quantity + order.totalQuantity
@@ -3151,9 +3210,6 @@ class ESDynamicStraddleStrategy(Object):
                 print("Not enough bracket orders: attaching put order for strike:", strike, "limit_price:", put_profit_order_target_price, "put_contract:", put_contract, "profit_order:", put_profit_order, "loss_order:", put_stop_order)
                 self.log_file_handle.write("Not enough bracket orders: attaching put order for strike:" + str(strike) + "limit_price:" + str(put_profit_order_target_price) + "put_contract:" + str(put_contract) + "profit_order:" + str(put_profit_order) + "loss_order:" + str(put_stop_order) + "\n")
                 time.sleep(self.intra_order_sleep_time_ms/1000)
-                self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                self.put_bracket_order_maintenance_on_hold = True
             elif position < 0 and strike_put_bracket_order_stplmt_quantity is not None and -position < strike_put_bracket_order_stplmt_quantity:
                 needed_quantity = strike_put_bracket_order_stplmt_quantity + position
                 #cancel the extra bracket order
@@ -3163,9 +3219,6 @@ class ESDynamicStraddleStrategy(Object):
                 print("Too many bracket orders: cancelling put order for strike:", strike)
                 self.log_file_handle.write("Too many bracket orders: cancelling put order for strike:" + str(strike) + "\n")
                 time.sleep(self.intra_order_sleep_time_ms/1000)
-                self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                self.put_bracket_order_maintenance_on_hold = True
             elif position < 0 and strike_put_bracket_order_stplmt_quantity is not None and strike_put_bracket_order_profit_quantity is not None and -position == strike_put_bracket_order_stplmt_quantity:
                 #check that bracket order limit order and stop limit orders have same quantity
                 if strike_put_bracket_order_stplmt_quantity != strike_put_bracket_order_profit_quantity:
@@ -3177,8 +3230,8 @@ class ESDynamicStraddleStrategy(Object):
                     print("Unequal bracket profit and stplmt legs: cancelling put profit and loss orders for strike:", strike)
                     self.log_file_handle.write("Unequal bracket profit and stplmt legs: cancelling put profit and loss orders for strike:" + str(strike) + "\n")
                     time.sleep(self.intra_order_sleep_time_ms/1000)
-                    self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
-                    self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                    #self.put_bracket_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
+                    #self.put_bracket_profit_order_maintenance_on_hold_for_strike[strike] = True #wait until the flag is reset
                     self.put_bracket_order_maintenance_on_hold = True
         #clear the stplmt and stplmt_profit open orders
         if self.put_bracket_order_maintenance_on_hold:
@@ -3411,6 +3464,28 @@ class ESDynamicStraddleStrategy(Object):
         for order_queue_msg in self.order_queue.queue:
             print("    order msg in order_queue:", order_queue_msg)
             self.log_file_handle.write("    order msg in order_queue:" + str(order_queue_msg) + "\n")
+            #unpack the order_queue_msg
+            _order_queue_msg_type, _order_id, _contract, _order = order_queue_msg
+            if _order_queue_msg_type == "place_order" or _order_queue_msg_type == "cancel_order":
+                if _contract.symbol == "ES" and _contract.secType == "FOP" and _contract.lastTradeDateOrContractMonth == self.OptionTradeDate:
+                    if _order.action == "BUY" and _order.orderType == "STP LMT" and _order.lmtPrice is not None and _order.lmtPrice > 0 and _order.auxPrice is not None and _order.auxPrice > 0:
+                        if _contract.right == "C":
+                            _strike = _contract.strike
+                            self.call_bracket_order_maintenance_on_hold_for_strike[_strike] = True #wait until the flag is reset
+                            self.call_bracket_order_maintenance_on_hold = True
+                        elif _contract.right == "P":
+                            _strike = _contract.strike
+                            self.put_bracket_order_maintenance_on_hold_for_strike[_strike] = True #wait until the flag is reset
+                            self.put_bracket_order_maintenance_on_hold = True
+                    elif _order.action == "BUY" and _order.orderType == "LMT" and _order.lmtPrice is not None and _order.lmtPrice > 0:
+                        if _contract.right == "C":
+                            _strike = _contract.strike
+                            self.call_bracket_profit_order_maintenance_on_hold_for_strike[_strike] = True
+                            self.call_bracket_order_maintenance_on_hold = True
+                        elif _contract.right == "P":
+                            _strike = _contract.strike
+                            self.put_bracket_profit_order_maintenance_on_hold_for_strike[_strike] = True
+                            self.put_bracket_order_maintenance_on_hold = True
 
     def updateESPrice(self, tickType, newESPrice):
         testapp = self.testapp
@@ -3831,7 +3906,7 @@ class ESDynamicStraddleStrategy(Object):
                                 up_call_buy_order = OrderSamples.LimitOrder("BUY", 1, limit_price)
                                 up_call_buy_order.orderType = "LMT"
                                 up_call_buy_order.action = "BUY"
-                                up_call_buy_order.totalQuantity = 1
+                                up_call_buy_order.totalQuantity = self.each_hedge_buy_size
                                 up_call_buy_order.lmtPrice = limit_price
                                 up_call_buy_order.transmit = self.transmit_orders
                                 up_call_buy_order_tuple = (lastESPrice_ + offset, up_call_buy_order)
@@ -3914,7 +3989,7 @@ class ESDynamicStraddleStrategy(Object):
                                 up_put_buy_order = OrderSamples.LimitOrder("BUY", 1, limit_price)
                                 up_put_buy_order.orderType = "LMT"
                                 up_put_buy_order.action = "BUY"
-                                up_put_buy_order.totalQuantity = 1
+                                up_put_buy_order.totalQuantity = self.each_hedge_buy_size
                                 up_put_buy_order.lmtPrice = limit_price
                                 up_put_buy_order.transmit = self.transmit_orders
                                 up_put_buy_order_tuple = (lastESPrice_ - offset, up_put_buy_order)
@@ -4236,7 +4311,7 @@ class ESDynamicStraddleStrategy(Object):
                                 down_call_buy_order = OrderSamples.LimitOrder("BUY", 1, limit_price)
                                 down_call_buy_order.orderType = "LMT"
                                 down_call_buy_order.action = "BUY"
-                                down_call_buy_order.totalQuantity = 1
+                                down_call_buy_order.totalQuantity = self.each_hedge_buy_size
                                 down_call_buy_order.lmtPrice = limit_price
                                 down_call_buy_order.transmit = self.transmit_orders
                                 down_call_buy_order_tuple = (lastESPrice_ + offset, down_call_buy_order)
@@ -4318,7 +4393,7 @@ class ESDynamicStraddleStrategy(Object):
                                 down_put_buy_order = OrderSamples.LimitOrder("BUY", 1, limit_price)
                                 down_put_buy_order.orderType = "LMT"
                                 down_put_buy_order.action = "BUY"
-                                down_put_buy_order.totalQuantity = 1
+                                down_put_buy_order.totalQuantity = self.each_hedge_buy_size
                                 down_put_buy_order.lmtPrice = limit_price
                                 down_put_buy_order.transmit = self.transmit_orders
                                 down_put_buy_order_tuple = (lastESPrice_ - offset, down_put_buy_order)
@@ -4822,9 +4897,9 @@ def main():
                                dest="global_cancel", default=False,
                                help="whether to trigger a globalCancel req")
     cmdLineParser.add_argument("-d", "--trade-date", action="store", type=str,
-                               dest="trade_date", default="20240514", help="trade exp date in yyyymmdd str format")
+                               dest="trade_date", default="20240520", help="trade exp date in yyyymmdd str format")
     cmdLineParser.add_argument("-id", "--client-id", action="store", type=int,
-                               dest="client_id", default=0, help="client id to use")
+                               dest="client_id", default=3, help="client id to use")
     args = cmdLineParser.parse_args()
     print("Using args", args)
     logging.debug("Using args %s", args)
@@ -4864,13 +4939,14 @@ def main():
     alive = True
     client_id = args.client_id
     order_id_offset = client_id
+    app = TestApp(trade_date, order_id_offset)
+    if args.global_cancel:
+        app.globalCancelOnly = True
+            
     while alive:
         try:
             #if client_id > 0:
             #    time.sleep(60)
-            app = TestApp(trade_date, order_id_offset)
-            if args.global_cancel:
-                app.globalCancelOnly = True
             # ! [connect]
             app.connect("127.0.0.1", args.port, clientId=client_id)
             print("serverVersion:%s connectionTime:%s" % (app.serverVersion(),app.twsConnectionTime()))
@@ -4888,7 +4964,7 @@ def main():
             time.sleep(2)
             #wait until connection is established
             waited_seconds = 0
-            while not app.isConnected():
+            while not app.ESDynamicStraddleStrategy.connect_ack_recvd:
                 # ! [connect]
                 app.connect("127.0.0.1", args.port, clientId=client_id)
                 print("serverVersion:%s connectionTime:%s" % (app.serverVersion(),app.twsConnectionTime()))
@@ -4905,9 +4981,9 @@ def main():
                     soundfilename = "C:\Windows\Media\Ring05.wav"
                     #play soundfilename file
                     winsound.PlaySound(soundfilename, winsound.SND_FILENAME)
-                if waited_seconds > 60:
+                if waited_seconds > 300:
                     break
-                time.sleep(1)
+                time.sleep(2*waited_seconds)
 
             # ! [clientrun]
             app.run()
@@ -4938,8 +5014,8 @@ def main():
             current_time = datetime.datetime.now()
             if app.ESDynamicStraddleStrategy.log_file_handle is not None:
                 app.ESDynamicStraddleStrategy.log_file_handle.write("Exception:" + str(e) + " at time:" + str(current_time) + "\n")
-            app.reqIds(-1)
-            o_id = app.nextOrderId() 
+            #app.reqIds(-1)
+            #o_id = app.nextOrderId() 
         finally:
             stop_thread = True
             current_time = datetime.datetime.now()
@@ -4963,6 +5039,7 @@ def main():
             
             #apprently when socket is closed in lower layer, app.connected() can still return True, so don't check it
             app.disconnect()
+            app.ESDynamicStraddleStrategy.connect_ack_recvd = False
     
     print("stop_thread:", stop_thread)
     #stop the monitor thread
